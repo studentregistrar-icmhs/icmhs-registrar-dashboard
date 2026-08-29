@@ -1,4 +1,20 @@
-import { RawFlags, Student } from "./parse";
+import { RawFlags } from "./parse";
+
+/**
+ * The common shape every data source (legacy wide-column terms, the new
+ * Status Log, or a static historical snapshot) is normalized into before
+ * reconciliation/aggregation. This is what keeps aggregate.ts and the
+ * page components ignorant of where the data actually came from.
+ */
+export type ReconcilableStudent = {
+  admissionNo: string;
+  name: string;
+  courseCode: string;
+  courseName: string;
+  gender: string;
+  campus: "MAIN" | "NAKURU";
+  flags: RawFlags;
+};
 
 /**
  * A student's raw status flags are recorded as 8 independent columns and are
@@ -60,10 +76,10 @@ export type ConflictRow = {
   resolvedTo: string;
 };
 
-export function buildConflictReport(students: Student[]): ConflictRow[] {
+export function buildConflictReport(students: ReconcilableStudent[]): ConflictRow[] {
   const rows: ConflictRow[] = [];
   for (const s of students) {
-    const r = reconcile(s.flagsMayAug);
+    const r = reconcile(s.flags);
     if (r.hasConflict) {
       rows.push({
         admissionNo: s.admissionNo,

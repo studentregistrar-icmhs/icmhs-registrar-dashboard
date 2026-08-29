@@ -1,96 +1,94 @@
 # ICMHS Registrar Dashboard
 
-A live student-population dashboard that reads directly from the same
-Google Sheet (`MAIN CAMPUS` / `NAKURU CAMPUS` tabs) used by the
-`icmhsdeferment` app. No re-uploading — any edit to the sheet shows up on
-the next refresh.
+A multi-term student-population dashboard. Each term lives at its own
+URL (`/terms/<slug>`), and the term list on `/` is generated from a
+single config file — adding a new term never requires touching page
+logic.
 
-## How it works
+## Architecture
 
-- `app/page.tsx` fetches both tabs server-side via the Google Sheets API
-  on every request, revalidated at most every `REVALIDATE_SECONDS`
-  (default 120s) using Next.js's built-in ISR.
-- `lib/parse.ts` turns raw rows into typed `Student` records.
-- `lib/reconcile.ts` resolves each student's status. The source sheet
-  records 8 independent flag columns per student per term
-  (Graduation / Reported / Attachment / Clinicals / Deferred / Dropped /
-  Completed / NYR) that are **not mutually exclusive** — a student can
-  have more than one marked. This file picks one canonical status per
-  student using a precedence order (`PRECEDENCE` array), so the KPI and
-  ledger numbers sum cleanly. **Adjust that order** if the registrar's
-  office wants conflicts resolved differently.
-- `lib/aggregate.ts` rolls reconciled students up into the shapes the
-  dashboard renders (totals, per-programme counts, gender split, term
-  trend).
-- The "Data Quality" tab in the UI lists every student who had more than
-  one flag set, so the source sheet can be cleaned up directly.
-- The "Refresh now" button calls `POST /api/refresh` (forces
-  revalidation) then re-fetches `/api/students` for an instant pull,
-  without waiting for the scheduled interval.
+- **`lib/terms.ts`** — the term registry. Each entry says where that
+  term's data comes from:
+  - `live-legacy` — a term still stored as wide status columns in the
+    `MAIN CAMPUS` / `NAKURU CAMPUS` Google Sheet tabs (Jan–Apr 2026,
+    May–Aug 2026). Read live on every page load.
+  - `live-statuslog` — a term using the new single-column `STATUS LOG`
+    tab (Sept–Dec 2026 onward). Also read live.
+  - `static` — a previous year's term, parsed once from an uploaded
+    Excel file into a JSON snapshot under `data/historical/`. Never
+    fetched live.
+- **`lib/parse.ts`** — turns raw `MAIN CAMPUS`/`NAKURU CAMPUS` rows into
+  `Student` records (roster + both legacy flag blocks), plus
+  `toReconcilable()` to pick one block for a given term.
+- **`lib/statusLog.ts`** — turns the new `STATUS LOG` tab into the same
+  shape, for Sept–Dec 2026 onward. Each student gets exactly one status,
+  so this path can never produce a conflict.
+- **`lib/reconcile.ts`** — resolves multiple flags (only possible in
+  `live-legacy` terms) into one canonical status via a precedence order,
+  and reports any that had to be resolved.
+- **`lib/aggregate.ts`** — builds one term's dashboard data (totals,
+  gender split, per-programme rollup) from its normalized student list.
+  Source-agnostic — doesn't know or care where the students came from.
+- **`lib/loadTermData.ts`** — the one place that branches on a term's
+  `source.kind` and calls the right combination of the above. Used by
+  both `app/terms/[term]/page.tsx` and the refresh API route.
+- **`app/terms/[term]/page.tsx`** — the actual dashboard page for one
+  term.
+- **`app/page.tsx`** — landing page listing every term in `lib/terms.ts`.
+- **`app/api/terms/[term]/route.ts`** — powers the "Refresh now" button
+  (forces an immediate re-pull instead of waiting for the scheduled
+  revalidation).
 
 ## Setup
 
-1. **Install dependencies**
-
-   ```bash
-   npm install
-   ```
-
-2. **Environment variables** — copy `.env.example` to `.env.local` and
-   fill in the same service-account credentials already used by
-   `icmhsdeferment` (Vercel → icmhsdeferment project → Settings →
-   Environment Variables — copy the values across):
-
+1. `npm install`
+2. Copy `.env.example` to `.env.local`, filling in the same service
+   account credentials `icmhsdeferment` already uses on Vercel
+   (read-only scope is enough here):
    ```
    GOOGLE_SERVICE_ACCOUNT_EMAIL=...
    GOOGLE_PRIVATE_KEY="..."
    GOOGLE_SHEET_ID=...
    REVALIDATE_SECONDS=120
    ```
+3. `npm run dev` → http://localhost:3000
 
-   The service account only needs **read** access
-   (`spreadsheets.readonly` scope) — it does not need to be able to
-   write, unlike the deferment app's credentials.
+(No local Node? See the "install-free" deployment path — extract the
+zip, upload the folder to a new GitHub repo via the browser, then import
+into Vercel. Vercel builds it in the cloud; you never need Node locally.)
 
-3. **Run locally**
+## Setting up Sept–Dec 2026 (the new Status Log)
 
-   ```bash
-   npm run dev
+1. In the same Google Sheet, add a tab named exactly `STATUS LOG` with
+   header row: `Admission No. | Term | Status | Date Updated`.
+2. On the Status column, add Data Validation (Data → Data validation)
+   restricted to a dropdown with exactly these values, "Reject input"
+   on invalid entries:
    ```
+   Graduated, In Session, Attachment, Clinicals, Deferred, Dropped, Completed, NYR
+   ```
+3. Registrar staff add one new row per status change, with `Term` set
+   to `SEPT-DEC 2026` (must match `termLabel` in `lib/terms.ts` exactly).
+   Never edit old rows — always append.
+4. That's it — `/terms/sept-dec-2026` is already wired up to read this
+   tab once it exists.
 
-   Visit http://localhost:3000
+## Adjusting the status precedence (legacy terms only)
 
-## Deploying to Vercel
+Open `lib/reconcile.ts` and reorder `PRECEDENCE`. Only matters for
+`live-legacy` terms — Status-Log-based terms can't have conflicts by
+construction.
 
-```bash
-git init
-git add .
-git commit -m "Initial commit"
-git remote add origin <your new GitHub repo URL>
-git push -u origin main
-```
+## Adding a previous year
 
-Then in Vercel:
+See `data/historical/README.md`. Short version: send the workbook to
+Claude, drop the resulting JSON into `data/historical/`, add one entry
+to `lib/terms.ts`. No other code changes needed.
 
-1. "Add New… → Project" → import the GitHub repo.
-2. Add the three env vars from step 2 above under
-   Project Settings → Environment Variables.
-3. Deploy. You'll get a `your-project-name.vercel.app` URL.
+## Column layout reference (legacy terms)
 
-## Adjusting the status precedence
-
-Open `lib/reconcile.ts` and reorder the `PRECEDENCE` array. The first
-matching flag (top to bottom) wins for any student with multiple flags
-set. Current default:
-
-```
-Dropped → Graduated → Completed → Deferred → Attachment → Clinicals → Reported → NYR
-```
-
-## Column layout reference
-
-If the sheet's column order ever changes, update the `LAYOUT` constant
-in `lib/parse.ts`. Current mapping (0-indexed from column A):
+If the sheet's column order ever changes, update `LAYOUT` in
+`lib/parse.ts`. Current mapping (0-indexed from column A):
 
 | Field          | MAIN CAMPUS | NAKURU CAMPUS |
 |----------------|:-----------:|:-------------:|
@@ -102,14 +100,17 @@ in `lib/parse.ts`. Current mapping (0-indexed from column A):
 | Jan–Apr block  | K–R (10–17) | I–P (8–15)    |
 | May–Aug block  | S–Z (18–25) | Q–X (16–23)   |
 
-Each "block" is 8 consecutive columns in the order: Graduation,
-Reported, Attachment, Clinicals, Deferred, Dropped, Completed, NYR.
+Each block is 8 consecutive columns: Graduation, Reported, Attachment,
+Clinicals, Deferred, Dropped, Completed, NYR.
 
-## Optional next step: historical trends
+## Deploying to Vercel
 
-Right now "Jan–Apr vs May–Aug" is computed from the two term-blocks
-already in the sheet. To get real historical trend lines beyond these
-two terms, snapshot `buildDashboardData()`'s output into a database
-(e.g. the same Neon Postgres used by icmhsdeferment) on a schedule
-(Vercel Cron → hit `/api/students` daily/weekly and insert a row into a
-`snapshots` table). Ask if you'd like this scaffolded too.
+```bash
+git init && git add . && git commit -m "Initial commit"
+git branch -M main
+git remote add origin <your GitHub repo URL>
+git push -u origin main
+```
+
+Then in Vercel: Add New → Project → import the repo → add the three env
+vars → Deploy.

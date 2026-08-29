@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useMemo, useState } from "react";
+import Link from "next/link";
 import {
   PieChart, Pie, Cell, ResponsiveContainer, BarChart, Bar, XAxis, YAxis,
   Tooltip, Legend, CartesianGrid,
@@ -28,9 +29,15 @@ const STATUS_ORDER = [
 
 const fmt = (n: number) => n.toLocaleString("en-US");
 
-type Props = { initialData: DashboardData; initialConflicts: ConflictRow[] };
+type Props = {
+  initialData: DashboardData;
+  initialConflicts: ConflictRow[];
+  termLabel: string;
+  isLive: boolean;
+  apiTermSlug: string;
+};
 
-export default function Dashboard({ initialData, initialConflicts }: Props) {
+export default function Dashboard({ initialData, initialConflicts, termLabel, isLive, apiTermSlug }: Props) {
   const [data, setData] = useState(initialData);
   const [conflicts, setConflicts] = useState(initialConflicts);
   const [campus, setCampus] = useState<"all" | "main" | "nakuru">("all");
@@ -43,15 +50,6 @@ export default function Dashboard({ initialData, initialConflicts }: Props) {
   const genderData = useMemo(
     () => Object.entries(data.genders[campus]).map(([name, value]) => ({ name, value })),
     [data, campus]
-  );
-  const trendData = useMemo(
-    () =>
-      STATUS_ORDER.filter((s) => s.label !== "Unmarked").map((s) => ({
-        status: s.label,
-        "Jan – Apr": data.trend.janApr[s.label] ?? 0,
-        "May – Aug": data.trend.mayAug[s.label] ?? 0,
-      })),
-    [data]
   );
   const topPrograms = useMemo(() => {
     const key = campus === "main" ? "totalMain" : campus === "nakuru" ? "totalNakuru" : "total";
@@ -79,8 +77,7 @@ export default function Dashboard({ initialData, initialConflicts }: Props) {
   async function handleRefresh() {
     setRefreshing(true);
     try {
-      await fetch("/api/refresh", { method: "POST" });
-      const res = await fetch("/api/students", { cache: "no-store" });
+      const res = await fetch(`/api/terms/${apiTermSlug}`, { method: "POST" });
       const json = await res.json();
       if (json.dashboard) {
         setData(json.dashboard);
@@ -97,11 +94,13 @@ export default function Dashboard({ initialData, initialConflicts }: Props) {
     <div style={styles.page}>
       <header style={styles.header}>
         <div>
-          <div style={styles.eyebrow}>ICMHS · REGISTRAR'S OFFICE · LIVE</div>
-          <h1 style={styles.h1}>Student Population Tracker</h1>
+          <Link href="/" style={styles.backLink}>← All terms</Link>
+          <div style={styles.eyebrow}>ICMHS · REGISTRAR'S OFFICE · {isLive ? "LIVE" : "STATIC SNAPSHOT"}</div>
+          <h1 style={styles.h1}>{termLabel}</h1>
           <div style={styles.sub}>
-            Reading live from Google Sheets · last updated{" "}
-            {new Date(data.generatedAt).toLocaleString()}
+            {isLive
+              ? `Reading live from Google Sheets · last updated ${new Date(data.generatedAt).toLocaleString()}`
+              : `Static snapshot from an uploaded workbook · generated ${new Date(data.generatedAt).toLocaleDateString()}`}
           </div>
         </div>
         <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
@@ -116,9 +115,11 @@ export default function Dashboard({ initialData, initialConflicts }: Props) {
               </button>
             ))}
           </div>
-          <button onClick={handleRefresh} disabled={refreshing} style={styles.refreshBtn}>
-            {refreshing ? "Refreshing…" : "Refresh now"}
-          </button>
+          {isLive && (
+            <button onClick={handleRefresh} disabled={refreshing} style={styles.refreshBtn}>
+              {refreshing ? "Refreshing…" : "Refresh now"}
+            </button>
+          )}
         </div>
       </header>
 
@@ -179,41 +180,20 @@ export default function Dashboard({ initialData, initialConflicts }: Props) {
             </div>
           </section>
 
-          <section style={styles.row2}>
-            <div style={styles.card}>
-              <div style={styles.cardHead}><h2 style={styles.h2}>Gender Split</h2></div>
-              <div style={{ width: "100%", height: 260 }}>
-                <ResponsiveContainer>
-                  <PieChart>
-                    <Pie data={genderData} dataKey="value" nameKey="name" innerRadius={62} outerRadius={95} paddingAngle={2}>
-                      {genderData.map((e) => (
-                        <Cell key={e.name} fill={e.name === "Female" ? C.teal : C.amber} />
-                      ))}
-                    </Pie>
-                    <Tooltip formatter={(v: any, n: any) => [fmt(v), n]} />
-                    <Legend />
-                  </PieChart>
-                </ResponsiveContainer>
-              </div>
-            </div>
-            <div style={styles.card}>
-              <div style={styles.cardHead}>
-                <h2 style={styles.h2}>Term-on-Term Trend</h2>
-                <span style={styles.cardNote}>Jan–Apr vs May–Aug · all campuses</span>
-              </div>
-              <div style={{ width: "100%", height: 260 }}>
-                <ResponsiveContainer>
-                  <BarChart data={trendData} margin={{ top: 8, right: 8, left: -18, bottom: 0 }}>
-                    <CartesianGrid stroke={C.line} vertical={false} />
-                    <XAxis dataKey="status" tick={{ fontSize: 10, fill: C.slate }} interval={0} angle={-20} textAnchor="end" height={55} />
-                    <YAxis tick={{ fontSize: 11, fill: C.slate }} />
-                    <Tooltip formatter={(v: any) => fmt(v)} />
-                    <Legend />
-                    <Bar dataKey="Jan – Apr" fill={C.grey} radius={[3, 3, 0, 0]} />
-                    <Bar dataKey="May – Aug" fill={C.teal} radius={[3, 3, 0, 0]} />
-                  </BarChart>
-                </ResponsiveContainer>
-              </div>
+          <section style={{ ...styles.card, maxWidth: 460 }}>
+            <div style={styles.cardHead}><h2 style={styles.h2}>Gender Split</h2></div>
+            <div style={{ width: "100%", height: 260 }}>
+              <ResponsiveContainer>
+                <PieChart>
+                  <Pie data={genderData} dataKey="value" nameKey="name" innerRadius={62} outerRadius={95} paddingAngle={2}>
+                    {genderData.map((e) => (
+                      <Cell key={e.name} fill={e.name === "Female" ? C.teal : C.amber} />
+                    ))}
+                  </Pie>
+                  <Tooltip formatter={(v: any, n: any) => [fmt(v), n]} />
+                  <Legend />
+                </PieChart>
+              </ResponsiveContainer>
             </div>
           </section>
 
@@ -326,7 +306,9 @@ export default function Dashboard({ initialData, initialConflicts }: Props) {
       )}
 
       <footer style={styles.footer}>
-        Live from the MAIN CAMPUS / NAKURU CAMPUS Google Sheet used by icmhsdeferment.
+        {isLive
+          ? "Live from the MAIN CAMPUS / NAKURU CAMPUS Google Sheet used by icmhsdeferment."
+          : "Static snapshot — this term's source workbook is no longer being updated."}
       </footer>
     </div>
   );
@@ -344,6 +326,7 @@ function KpiCard({ label, value, accent, big }: { label: string; value: number; 
 const styles: Record<string, React.CSSProperties> = {
   page: { fontFamily: "Inter, sans-serif", background: C.bg, color: C.ink, padding: "28px 32px 40px", minHeight: "100vh", boxSizing: "border-box" },
   header: { display: "flex", justifyContent: "space-between", alignItems: "flex-end", flexWrap: "wrap", gap: 16, marginBottom: 14, borderBottom: `2px solid ${C.ink}`, paddingBottom: 16 },
+  backLink: { fontFamily: "IBM Plex Mono, monospace", fontSize: 12, color: C.slate, textDecoration: "none", display: "inline-block", marginBottom: 8 },
   eyebrow: { fontFamily: "IBM Plex Mono, monospace", fontSize: 11, letterSpacing: "0.12em", color: C.teal, fontWeight: 600, marginBottom: 4 },
   h1: { fontFamily: "Space Grotesk, sans-serif", fontWeight: 700, fontSize: 30, margin: 0, lineHeight: 1.1 },
   sub: { fontSize: 12.5, color: C.slate, marginTop: 4, fontFamily: "IBM Plex Mono, monospace" },

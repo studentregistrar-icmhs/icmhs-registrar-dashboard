@@ -65,6 +65,26 @@ function readFlags(row: any[], start: number): RawFlags {
   };
 }
 
+/**
+ * Converts a legacy wide-column Student into the source-agnostic
+ * ReconcilableStudent shape, picking one term's block of 8 flag columns.
+ * Use this for any term still stored as JAN-APR / MAY-AUG style columns.
+ */
+export function toReconcilable(
+  students: Student[],
+  block: "flagsJanApr" | "flagsMayAug"
+) {
+  return students.map((s) => ({
+    admissionNo: s.admissionNo,
+    name: s.name,
+    courseCode: s.courseCode,
+    courseName: s.courseName,
+    gender: s.gender,
+    campus: s.campus,
+    flags: s[block],
+  }));
+}
+
 export function parseCampusRows(rows: any[][], campus: Campus): Student[] {
   const layout = LAYOUT[campus];
   const students: Student[] = [];

@@ -1,5 +1,5 @@
-import { Student, RawFlags } from "./parse";
-import { reconcile, STATUS_LABEL } from "./reconcile";
+import { RawFlags } from "./parse";
+import { reconcile, STATUS_LABEL, ReconcilableStudent } from "./reconcile";
 
 export type DashboardData = {
   generatedAt: string;
@@ -13,10 +13,6 @@ export type DashboardData = {
     all: Record<string, number>;
     main: Record<string, number>;
     nakuru: Record<string, number>;
-  };
-  trend: {
-    janApr: Record<string, number>;
-    mayAug: Record<string, number>;
   };
   programs: {
     code: string;
@@ -38,21 +34,22 @@ function emptyStatusCounts(): Record<string, number> {
   return o;
 }
 
-function tallyFlags(students: Student[], period: "flagsMayAug" | "flagsJanApr") {
+function tallyFlags(students: ReconcilableStudent[]) {
   const counts = emptyStatusCounts();
   for (const s of students) {
-    const r = reconcile(s[period]);
+    const r = reconcile(s.flags);
     const label = r.canonicalStatus === "UNMARKED" ? "Unmarked" : STATUS_LABEL[r.canonicalStatus];
     counts[label] += 1;
   }
   return counts;
 }
 
-export function buildDashboardData(students: Student[]): DashboardData {
+/** Builds one term's dashboard data from its normalized student list. */
+export function buildDashboardData(students: ReconcilableStudent[]): DashboardData {
   const main = students.filter((s) => s.campus === "MAIN");
   const nakuru = students.filter((s) => s.campus === "NAKURU");
 
-  const genderTally = (list: Student[]) => {
+  const genderTally = (list: ReconcilableStudent[]) => {
     const g: Record<string, number> = {};
     for (const s of list) {
       const key = s.gender || "Unknown";
@@ -62,7 +59,6 @@ export function buildDashboardData(students: Student[]): DashboardData {
     return g;
   };
 
-  // per-programme rollup (May-Aug canonical status)
   const programMap = new Map<
     string,
     { name: string; totalMain: number; totalNakuru: number; statusCounts: Record<string, number> }
@@ -80,7 +76,7 @@ export function buildDashboardData(students: Student[]): DashboardData {
     const p = programMap.get(key)!;
     if (s.campus === "MAIN") p.totalMain += 1;
     else p.totalNakuru += 1;
-    const r = reconcile(s.flagsMayAug);
+    const r = reconcile(s.flags);
     const label = r.canonicalStatus === "UNMARKED" ? "Unmarked" : STATUS_LABEL[r.canonicalStatus];
     p.statusCounts[label] += 1;
   }
@@ -96,24 +92,20 @@ export function buildDashboardData(students: Student[]): DashboardData {
     }))
     .sort((a, b) => b.total - a.total);
 
-  const conflictCount = students.filter((s) => reconcile(s.flagsMayAug).hasConflict).length;
+  const conflictCount = students.filter((s) => reconcile(s.flags).hasConflict).length;
 
   return {
     generatedAt: new Date().toISOString(),
     totals: { main: main.length, nakuru: nakuru.length, all: students.length },
     statusCounts: {
-      all: tallyFlags(students, "flagsMayAug"),
-      main: tallyFlags(main, "flagsMayAug"),
-      nakuru: tallyFlags(nakuru, "flagsMayAug"),
+      all: tallyFlags(students),
+      main: tallyFlags(main),
+      nakuru: tallyFlags(nakuru),
     },
     genders: {
       all: genderTally(students),
       main: genderTally(main),
       nakuru: genderTally(nakuru),
-    },
-    trend: {
-      janApr: tallyFlags(students, "flagsJanApr"),
-      mayAug: tallyFlags(students, "flagsMayAug"),
     },
     programs,
     conflictCount,
