@@ -52,6 +52,9 @@ const LAYOUT = {
   },
 } as const;
 
+/** Exposed for lib/writeStatus.ts, which needs to compute exact write ranges. */
+export const LAYOUT_FOR_WRITE = LAYOUT;
+
 function readFlags(row: any[], start: number): RawFlags {
   return {
     graduation: !isBlank(row[start + 0]),
@@ -63,6 +66,12 @@ function readFlags(row: any[], start: number): RawFlags {
     completed: !isBlank(row[start + 6]),
     nyr: !isBlank(row[start + 7]),
   };
+}
+
+/** Reads the flags for one term ("flagsJanApr"/"flagsMayAug") directly from a raw row, given campus. */
+export function readFlagsAt(row: any[], campus: Campus, block: "flagsJanApr" | "flagsMayAug"): RawFlags {
+  const layout = LAYOUT[campus];
+  return readFlags(row, block === "flagsJanApr" ? layout.janApr : layout.mayAug);
 }
 
 /**

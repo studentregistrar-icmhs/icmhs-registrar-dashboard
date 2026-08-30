@@ -1,24 +1,16 @@
 import { RawFlags } from "./parse";
-import { ReconcilableStudent } from "./reconcile";
+import { ReconcilableStudent, LABEL_TO_FLAG } from "./reconcile";
 
 /**
  * Expected shape of the new "STATUS LOG" tab, one row per status entry:
  *   Admission No. | Term | Status | Date Updated
  * e.g.  2024/1234 | SEPT-DEC 2026 | In Session | 2026-09-05
  *
- * Status should be a Data-Validation dropdown restricted to exactly these
- * labels (see README) so this mapping never sees anything unexpected:
+ * Status should be a Data-Validation dropdown restricted to the labels in
+ * STATUS_LABEL (see README) so LABEL_TO_FLAG never sees anything unexpected.
+ * Note: the dropdown value is "Not Yet Reported", not "NYR" — matches what
+ * the dashboard displays everywhere else.
  */
-const LABEL_TO_FLAG: Record<string, keyof RawFlags> = {
-  Graduated: "graduation",
-  "In Session": "reported",
-  Attachment: "attachment",
-  Clinicals: "clinicals",
-  Deferred: "deferred",
-  Dropped: "dropped",
-  Completed: "completed",
-  NYR: "nyr",
-};
 
 const EMPTY_FLAGS: RawFlags = {
   graduation: false, reported: false, attachment: false, clinicals: false,

@@ -7,6 +7,7 @@ export default function Home() {
       <div style={styles.eyebrow}>ICMHS · REGISTRAR'S OFFICE</div>
       <h1 style={styles.h1}>Student Population Tracker</h1>
       <p style={styles.sub}>Choose a term to view its dashboard.</p>
+      <Link href="/students" style={styles.studentSearchLink}>🔍 Find a student</Link>
       <div style={styles.grid}>
         {TERMS.map((t) => (
           <Link key={t.slug} href={`/terms/${t.slug}`} style={styles.card}>
@@ -31,4 +32,5 @@ const styles: Record<string, React.CSSProperties> = {
   card: { display: "block", background: "#fff", border: "1px solid #D9DFD3", borderRadius: 10, padding: "20px 18px", textDecoration: "none", color: "#122A28", boxShadow: "0 1px 3px rgba(18,42,40,0.07)" },
   cardLabel: { fontFamily: "Space Grotesk, sans-serif", fontWeight: 600, fontSize: 17, marginBottom: 6 },
   cardMeta: { fontFamily: "IBM Plex Mono, monospace", fontSize: 11.5, color: "#54625D", textTransform: "uppercase", letterSpacing: "0.04em" },
+  studentSearchLink: { display: "inline-block", marginBottom: 24, fontSize: 13.5, color: "#0F7268", textDecoration: "none", fontWeight: 600 },
 };

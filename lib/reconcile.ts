@@ -48,6 +48,18 @@ export const STATUS_LABEL: Record<keyof RawFlags, string> = {
   nyr: "Not Yet Reported",
 };
 
+export const LABEL_TO_FLAG: Record<string, keyof RawFlags> = Object.fromEntries(
+  (Object.entries(STATUS_LABEL) as [keyof RawFlags, string][]).map(([k, v]) => [v, k])
+) as Record<string, keyof RawFlags>;
+
+/**
+ * Once a student is Graduated or Dropped, that's treated as final — no
+ * further status change is allowed without an explicit override. Enforced
+ * at write time (see lib/writeStatus.ts), not here; this list is the single
+ * source of truth for which statuses count as terminal.
+ */
+export const TERMINAL_STATUSES: (keyof RawFlags)[] = ["graduation", "dropped"];
+
 export type Reconciled = {
   canonicalStatus: keyof RawFlags | "UNMARKED";
   setFlags: (keyof RawFlags)[];
