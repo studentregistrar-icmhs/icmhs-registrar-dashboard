@@ -69,6 +69,7 @@ export default function Dashboard({
   const [globalQuery, setGlobalQuery] = useState("");
   const [globalSearchOpen, setGlobalSearchOpen] = useState(false);
   const [now, setNow] = useState(() => Date.now());
+  const [resolvingId, setResolvingId] = useState<string | null>(null);
 
   useEffect(() => {
     const id = setInterval(() => setNow(Date.now()), 30_000);
@@ -193,6 +194,26 @@ export default function Dashboard({
       }
     } finally {
       setRefreshing(false);
+    }
+  }
+
+  async function handleResolve(admissionNo: string) {
+    setResolvingId(admissionNo);
+    try {
+      const res = await fetch("/api/conflicts/resolve", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ admissionNo, termSlug: apiTermSlug }),
+      });
+      const json = await res.json();
+      if (json.ok) {
+        setConflicts((prev) => prev.filter((c) => c.admissionNo !== admissionNo));
+        await handleRefresh();
+      } else {
+        alert(`Couldn't resolve: ${json.reason ?? "unknown error"}`);
+      }
+    } finally {
+      setResolvingId(null);
     }
   }
 
@@ -493,17 +514,31 @@ export default function Dashboard({
                     <th style={styles.th}>Course</th>
                     <th style={{ ...styles.th, textAlign: "left" }}>Flags Set</th>
                     <th style={{ ...styles.th, textAlign: "left" }}>Resolved To</th>
+                    <th style={styles.th}></th>
                   </tr>
                 </thead>
                 <tbody>
                   {conflicts.map((c, i) => (
                     <tr key={c.admissionNo + i} style={i % 2 ? styles.trOdd : undefined}>
-                      <td style={styles.tdCode}>{c.admissionNo}</td>
+                      <td style={styles.tdCode}>
+                        <Link href={`/students/${encodeURIComponent(c.admissionNo)}`} style={{ color: C.teal }}>
+                          {c.admissionNo}
+                        </Link>
+                      </td>
                       <td style={styles.tdName}>{c.name}</td>
                       <td style={styles.tdNum}>{c.campus}</td>
                       <td style={styles.tdNum}>{c.courseCode}</td>
                       <td style={{ ...styles.tdName, color: C.rose }}>{c.setStatuses.join(", ")}</td>
                       <td style={{ ...styles.tdName, fontWeight: 600 }}>{c.resolvedTo}</td>
+                      <td style={styles.tdNum}>
+                        <button
+                          style={styles.resolveBtn}
+                          disabled={resolvingId === c.admissionNo}
+                          onClick={() => handleResolve(c.admissionNo)}
+                        >
+                          {resolvingId === c.admissionNo ? "Resolving…" : "Resolve"}
+                        </button>
+                      </td>
                     </tr>
                   ))}
                 </tbody>
@@ -511,8 +546,9 @@ export default function Dashboard({
             </div>
           )}
           <div style={styles.ledgerFoot}>
-            Fix these at the source (the Google Sheet) by clearing the extra flag columns —
-            the dashboard will pick up the correction on its next refresh.
+            "Resolve" clears the redundant flag columns in the sheet, keeping only the
+            canonical status shown above — writes directly to the Google Sheet. You can
+            also fix these manually at the source if you'd rather.
           </div>
         </section>
 
@@ -542,7 +578,11 @@ export default function Dashboard({
                 <tbody>
                   {unmarked.map((s, i) => (
                     <tr key={s.admissionNo + i} style={i % 2 ? styles.trOdd : undefined}>
-                      <td style={styles.tdCode}>{s.admissionNo}</td>
+                      <td style={styles.tdCode}>
+                        <Link href={`/students/${encodeURIComponent(s.admissionNo)}`} style={{ color: C.teal }}>
+                          {s.admissionNo}
+                        </Link>
+                      </td>
                       <td style={styles.tdName}>{s.name}</td>
                       <td style={styles.tdNum}>{s.campus}</td>
                       <td style={styles.tdName}>{s.courseName || s.courseCode}</td>
@@ -646,7 +686,11 @@ function GlobalSearchDropdown({
             <span onClick={onClose} style={{ cursor: "pointer" }}>✕</span>
           </div>
           {results.slice(0, 30).map((s, i) => (
-            <div key={s.admissionNo + i} style={styles.globalRow}>
+            <Link
+              key={s.admissionNo + i}
+              href={`/students/${encodeURIComponent(s.admissionNo)}`}
+              style={{ ...styles.globalRow, textDecoration: "none", color: "inherit" }}
+            >
               <div>
                 <div style={{ fontWeight: 600, fontSize: 13 }}>{s.name}</div>
                 <div style={{ fontSize: 11.5, color: C.slate, fontFamily: "IBM Plex Mono, monospace" }}>
@@ -654,7 +698,7 @@ function GlobalSearchDropdown({
                 </div>
               </div>
               <span style={styles.globalStatusPill}>{s.status}</span>
-            </div>
+            </Link>
           ))}
         </>
       )}
@@ -724,7 +768,11 @@ function StudentListPanel({
             <tbody>
               {students.map((s, i) => (
                 <tr key={s.admissionNo + i} style={i % 2 ? panelStyles.trOdd : undefined}>
-                  <td style={panelStyles.tdCode}>{s.admissionNo}</td>
+                  <td style={panelStyles.tdCode}>
+                    <Link href={`/students/${encodeURIComponent(s.admissionNo)}`} style={{ color: C.teal }}>
+                      {s.admissionNo}
+                    </Link>
+                  </td>
                   <td style={panelStyles.tdName}>{s.name}</td>
                   <td style={panelStyles.tdName}>{s.courseName || s.courseCode}</td>
                   <td style={panelStyles.tdNum}>{s.campus}</td>
@@ -814,4 +862,5 @@ const styles: Record<string, React.CSSProperties> = {
   tdName: { padding: "7px 10px", color: C.ink, minWidth: 200 },
   tdNum: { fontFamily: "IBM Plex Mono, monospace", fontSize: 12.5, padding: "7px 10px", textAlign: "right", color: C.slate, whiteSpace: "nowrap" },
   footer: { fontSize: 11.5, color: C.slate, textAlign: "center", marginTop: 8, fontFamily: "IBM Plex Mono, monospace" },
+  resolveBtn: { border: `1px solid ${C.teal}`, background: "#fff", color: C.teal, borderRadius: 6, padding: "4px 10px", fontSize: 11.5, fontWeight: 600, cursor: "pointer", whiteSpace: "nowrap" },
 };

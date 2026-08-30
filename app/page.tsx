@@ -32,44 +32,9 @@ export default async function Home() {
 
   return (
     <div style={styles.page}>
-      <style>{`
-        .term-card { transition: box-shadow 0.15s ease, transform 0.15s ease, border-color 0.15s ease; }
-        .term-card:hover { box-shadow: 0 6px 16px rgba(18,42,40,0.12); transform: translateY(-2px); border-color: ${C.line}; }
-        .search-box { transition: box-shadow 0.15s ease, border-color 0.15s ease; }
-        .search-box:hover { box-shadow: 0 2px 8px rgba(18,42,40,0.08); border-color: ${C.teal}; }
-      `}</style>
-
-      <header style={styles.header}>
-        <div>
-          <div style={styles.eyebrow}>ICMHS · REGISTRAR'S OFFICE</div>
-          <h1 style={styles.h1}>Student Population Tracker</h1>
-          <p style={styles.sub}>Thika Main &amp; Nakuru campuses — pick a term below, or look up a student directly.</p>
-        </div>
-        <Link href="/students" className="search-box" style={styles.searchBox}>
-          <span style={styles.searchIcon}>⌕</span>
-          <span style={styles.searchText}>Find a student by name or admission no.</span>
-        </Link>
-      </header>
-
-      {ready.length > 0 && (
-        <div style={styles.statStrip}>
-          <div style={styles.statItem}>
-            <div style={styles.statValue}>{fmt(totalTracked)}</div>
-            <div style={styles.statLabel}>Students tracked</div>
-          </div>
-          <div style={styles.statDivider} />
-          <div style={styles.statItem}>
-            <div style={styles.statValue}>{liveCount} / {TERMS.length}</div>
-            <div style={styles.statLabel}>Terms live</div>
-          </div>
-          <div style={styles.statDivider} />
-          <div style={styles.statItem}>
-            <div style={{ ...styles.statValue, color: openConflicts > 0 ? C.rose : C.ink }}>{fmt(openConflicts)}</div>
-            <div style={styles.statLabel}>Open conflicts</div>
-          </div>
-        </div>
-      )}
-
+      <div style={styles.eyebrow}>ICMHS · REGISTRAR'S OFFICE</div>
+      <h1 style={styles.h1}>Student Population Tracker</h1>
+      <p style={styles.sub}>Choose a term to view its dashboard.</p>
       <div style={styles.grid}>
         {results.map(({ term: t, data }) => {
           const isReady = !!data && !data.error;
@@ -108,28 +73,12 @@ export default async function Home() {
 }
 
 const styles: Record<string, React.CSSProperties> = {
-  page: { fontFamily: "Inter, sans-serif", background: C.bg, color: C.ink, padding: "48px 32px 40px", minHeight: "100vh", boxSizing: "border-box" },
-  header: { display: "flex", justifyContent: "space-between", alignItems: "flex-end", flexWrap: "wrap", gap: 20, maxWidth: 980, marginBottom: 28 },
-  eyebrow: { fontFamily: "IBM Plex Mono, monospace", fontSize: 11, letterSpacing: "0.12em", color: C.teal, fontWeight: 600, marginBottom: 6 },
-  h1: { fontFamily: "Space Grotesk, sans-serif", fontWeight: 700, fontSize: 34, margin: 0, letterSpacing: "-0.01em" },
-  sub: { fontSize: 14, color: C.slate, marginTop: 8, maxWidth: 480, lineHeight: 1.5 },
-  searchBox: { display: "flex", alignItems: "center", gap: 10, background: C.card, border: `1px solid ${C.line}`, borderRadius: 10, padding: "12px 16px", textDecoration: "none", color: C.slate, fontSize: 13.5, minWidth: 260, boxShadow: "0 1px 2px rgba(18,42,40,0.05)" },
-  searchIcon: { fontSize: 16, color: C.teal, fontWeight: 700 },
-  searchText: { fontWeight: 500 },
-  statStrip: { display: "flex", alignItems: "center", gap: 28, background: C.card, border: `1px solid ${C.line}`, borderRadius: 10, padding: "16px 24px", maxWidth: 980, marginBottom: 32, boxShadow: "0 1px 2px rgba(18,42,40,0.05)" },
-  statItem: { display: "flex", flexDirection: "column", gap: 3 },
-  statValue: { fontFamily: "IBM Plex Mono, monospace", fontWeight: 600, fontSize: 22, color: C.ink },
-  statLabel: { fontSize: 11, color: C.slate, textTransform: "uppercase", letterSpacing: "0.05em" },
-  statDivider: { width: 1, alignSelf: "stretch", background: C.line },
-  grid: { display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(240px, 1fr))", gap: 14, maxWidth: 980 },
-  card: { display: "block", background: C.card, border: `1px solid ${C.line}`, borderTop: "3px solid", borderRadius: 10, padding: "18px 18px 16px", textDecoration: "none", color: C.ink, boxShadow: "0 1px 3px rgba(18,42,40,0.07)" },
-  cardTop: { display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 },
-  cardLabel: { fontFamily: "Space Grotesk, sans-serif", fontWeight: 600, fontSize: 17 },
-  currentBadge: { fontFamily: "IBM Plex Mono, monospace", fontSize: 9.5, fontWeight: 600, letterSpacing: "0.06em", color: C.teal, border: `1px solid ${C.teal}`, borderRadius: 4, padding: "2px 6px" },
-  cardHeadcount: { fontFamily: "IBM Plex Mono, monospace", fontWeight: 600, fontSize: 24, color: C.ink, marginBottom: 8 },
-  cardHeadcountUnit: { fontFamily: "Inter, sans-serif", fontWeight: 500, fontSize: 12.5, color: C.slate },
-  cardMetaRow: { display: "flex", justifyContent: "space-between", fontFamily: "IBM Plex Mono, monospace", fontSize: 11, color: C.slate, textTransform: "uppercase", letterSpacing: "0.03em" },
-  cardConflict: { marginTop: 10, fontSize: 11.5, color: C.rose, fontWeight: 600 },
-  cardNotReady: { fontSize: 12.5, color: C.grey, fontStyle: "italic" },
-  footer: { marginTop: 44, fontFamily: "IBM Plex Mono, monospace", fontSize: 11, color: C.grey, letterSpacing: "0.02em" },
+  page: { fontFamily: "Inter, sans-serif", background: "#EEF1EA", color: "#122A28", padding: "48px 32px", minHeight: "100vh", boxSizing: "border-box" },
+  eyebrow: { fontFamily: "IBM Plex Mono, monospace", fontSize: 11, letterSpacing: "0.12em", color: "#0F7268", fontWeight: 600, marginBottom: 6 },
+  h1: { fontFamily: "Space Grotesk, sans-serif", fontWeight: 700, fontSize: 32, margin: 0 },
+  sub: { fontSize: 14, color: "#54625D", marginTop: 8, marginBottom: 28 },
+  grid: { display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))", gap: 14, maxWidth: 900 },
+  card: { display: "block", background: "#fff", border: "1px solid #D9DFD3", borderRadius: 10, padding: "20px 18px", textDecoration: "none", color: "#122A28", boxShadow: "0 1px 3px rgba(18,42,40,0.07)" },
+  cardLabel: { fontFamily: "Space Grotesk, sans-serif", fontWeight: 600, fontSize: 17, marginBottom: 6 },
+  cardMeta: { fontFamily: "IBM Plex Mono, monospace", fontSize: 11.5, color: "#54625D", textTransform: "uppercase", letterSpacing: "0.04em" },
 };
