@@ -54,6 +54,19 @@ export async function updateRange(range: string, values: any[]): Promise<void> {
   });
 }
 
+/** Overwrites several ranges in a single API call — used for bulk conflict resolution
+ * so resolving N students costs one Sheets write instead of N. */
+export async function batchUpdateRanges(updates: { range: string; values: any[] }[]): Promise<void> {
+  if (updates.length === 0) return;
+  await getSheetsClient().spreadsheets.values.batchUpdate({
+    spreadsheetId: getSheetId(),
+    requestBody: {
+      valueInputOption: "RAW",
+      data: updates.map((u) => ({ range: u.range, values: [u.values] })),
+    },
+  });
+}
+
 /** Appends one row to the end of a tab (used for the append-only Status Log). */
 export async function appendRow(tabName: string, values: any[]): Promise<void> {
   await getSheetsClient().spreadsheets.values.append({

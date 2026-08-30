@@ -1,4 +1,4 @@
-import { fetchSheetRows, updateRange, appendRow } from "./googleSheets";
+import { fetchSheetRows, updateRange, appendRow, batchUpdateRanges } from "./googleSheets";
 import { findStudentRow } from "./rosterLookup";
 import { getTerm, TERMS } from "./terms";
 import { reconcile, STATUS_LABEL, LABEL_TO_FLAG, TERMINAL_STATUSES } from "./reconcile";
@@ -105,6 +105,72 @@ export async function resolveLegacyConflict(admissionNo: string, termSlug: strin
     newStatusLabel: STATUS_LABEL[r.canonicalStatus],
     override: true, // resolving a conflict never counts as "changing away from" a terminal status
   });
+}
+
+/**
+ * Same as resolveLegacyConflict, but for many students at once. Fetches each
+ * campus tab ONCE (instead of once per student) and writes every resolved
+ * row in a single Sheets API call via batchUpdateRanges. Like the single
+ * version, this never triggers the terminal lock — resolving a conflict is
+ * never treated as "changing away from" a terminal status.
+ */
+export async function resolveLegacyConflictsBulk(
+  admissionNos: string[],
+  termSlug: string
+): Promise<{ admissionNo: string; result: WriteResult }[]> {
+  const term = getTerm(termSlug);
+  if (!term || term.source.kind !== "live-legacy") {
+    return admissionNos.map((admissionNo) => ({ admissionNo, result: { ok: false, reason: "unsupported-term" } }));
+  }
+
+  const [mainRows, nakuruRows] = await Promise.all([
+    fetchSheetRows("MAIN CAMPUS!A:Z"),
+    fetchSheetRows("NAKURU CAMPUS!A:X"),
+  ]);
+
+  const byAdmission = new Map<string, { campus: "MAIN" | "NAKURU"; sheetRowNumber: number; rawRow: any[] }>();
+  for (const [campus, rows] of [["MAIN", mainRows], ["NAKURU", nakuruRows]] as const) {
+    for (let i = 2; i < rows.length; i++) {
+      const row = rows[i];
+      if (row && row[1] != null && String(row[1]).trim() !== "") {
+        byAdmission.set(String(row[1]), { campus, sheetRowNumber: i + 1, rawRow: row });
+      }
+    }
+  }
+
+  const results: { admissionNo: string; result: WriteResult }[] = [];
+  const updates: { range: string; values: any[] }[] = [];
+
+  for (const admissionNo of admissionNos) {
+    const loc = byAdmission.get(admissionNo);
+    if (!loc) {
+      results.push({ admissionNo, result: { ok: false, reason: "not-found" } });
+      continue;
+    }
+
+    const flags = readFlagsAt(loc.rawRow, loc.campus, term.source.block);
+    const r = reconcile(flags);
+    if (r.canonicalStatus === "UNMARKED") {
+      results.push({ admissionNo, result: { ok: false, reason: "invalid-status" } });
+      continue;
+    }
+
+    const layout = LAYOUT_FOR_WRITE[loc.campus];
+    const startCol = term.source.block === "flagsJanApr" ? layout.janApr : layout.mayAug;
+    const winningKey = r.canonicalStatus;
+    const values = (Object.keys(STATUS_LABEL) as (keyof typeof STATUS_LABEL)[]).map((k) =>
+      k === winningKey ? STATUS_LABEL[winningKey] : "-"
+    );
+    const range = `${loc.campus === "MAIN" ? "MAIN CAMPUS" : "NAKURU CAMPUS"}!${colLetter(startCol)}${loc.sheetRowNumber}:${colLetter(startCol + 7)}${loc.sheetRowNumber}`;
+    updates.push({ range, values });
+    results.push({ admissionNo, result: { ok: true } });
+  }
+
+  if (updates.length > 0) {
+    await batchUpdateRanges(updates);
+  }
+
+  return results;
 }
 
 function colLetter(index0: number): string {

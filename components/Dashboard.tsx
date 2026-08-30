@@ -70,6 +70,7 @@ export default function Dashboard({
   const [globalSearchOpen, setGlobalSearchOpen] = useState(false);
   const [now, setNow] = useState(() => Date.now());
   const [resolvingId, setResolvingId] = useState<string | null>(null);
+  const [bulkResolvingCategory, setBulkResolvingCategory] = useState<string | null>(null);
 
   useEffect(() => {
     const id = setInterval(() => setNow(Date.now()), 30_000);
@@ -159,6 +160,12 @@ export default function Dashboard({
     downloadCsv(`${termLabel.replace(/\s+/g, "-")}-programmes.csv`, toCsv(headers, rows));
   }
 
+  const conflictsByCategory = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const c of conflicts) counts.set(c.resolvedTo, (counts.get(c.resolvedTo) ?? 0) + 1);
+    return [...counts.entries()].sort((a, b) => b[1] - a[1]);
+  }, [conflicts]);
+
   function exportConflicts() {
     const headers = ["Admission No.", "Name", "Campus", "Course", "Flags Set", "Resolved To"];
     const rows = conflicts.map((c) => [c.admissionNo, c.name, c.campus, c.courseCode, c.setStatuses.join("; "), c.resolvedTo]);
@@ -214,6 +221,33 @@ export default function Dashboard({
       }
     } finally {
       setResolvingId(null);
+    }
+  }
+
+  async function handleBulkResolve(category: string) {
+    const admissionNos = conflicts.filter((c) => c.resolvedTo === category).map((c) => c.admissionNo);
+    if (admissionNos.length === 0) return;
+    setBulkResolvingCategory(category);
+    try {
+      const res = await fetch("/api/conflicts/resolve-bulk", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ admissionNos, termSlug: apiTermSlug }),
+      });
+      const json = await res.json();
+      const succeeded: string[] = json.succeeded ?? [];
+      if (succeeded.length > 0) {
+        setConflicts((prev) => prev.filter((c) => !succeeded.includes(c.admissionNo)));
+        await handleRefresh();
+      }
+      if (json.failed?.length) {
+        alert(
+          `Resolved ${succeeded.length} of ${admissionNos.length} to ${category}. ${json.failed.length} couldn't be resolved:\n` +
+            json.failed.map((f: any) => `${f.admissionNo}: ${f.result.reason}`).join("\n")
+        );
+      }
+    } finally {
+      setBulkResolvingCategory(null);
     }
   }
 
@@ -499,6 +533,21 @@ export default function Dashboard({
             </div>
             {conflicts.length > 0 && <button onClick={exportConflicts} style={styles.exportBtn}>Export CSV</button>}
           </div>
+          {conflictsByCategory.length > 0 && (
+            <div style={styles.bulkRow}>
+              <span style={styles.bulkRowLabel}>Resolve all:</span>
+              {conflictsByCategory.map(([category, count]) => (
+                <button
+                  key={category}
+                  style={styles.bulkResolveBtn}
+                  disabled={bulkResolvingCategory !== null}
+                  onClick={() => handleBulkResolve(category)}
+                >
+                  {bulkResolvingCategory === category ? "Resolving…" : `${category} (${count})`}
+                </button>
+              ))}
+            </div>
+          )}
           {conflicts.length === 0 ? (
             <div style={{ padding: "20px 0", color: C.slate }}>
               No conflicts found — every student has exactly one status flag set. 🎉
@@ -547,7 +596,8 @@ export default function Dashboard({
           )}
           <div style={styles.ledgerFoot}>
             "Resolve" clears the redundant flag columns in the sheet, keeping only the
-            canonical status shown above — writes directly to the Google Sheet. You can
+            canonical status shown above — writes directly to the Google Sheet. Use "Resolve
+            all" to clear every conflict that resolves to the same status in one go. You can
             also fix these manually at the source if you'd rather.
           </div>
         </section>
@@ -863,4 +913,7 @@ const styles: Record<string, React.CSSProperties> = {
   tdNum: { fontFamily: "IBM Plex Mono, monospace", fontSize: 12.5, padding: "7px 10px", textAlign: "right", color: C.slate, whiteSpace: "nowrap" },
   footer: { fontSize: 11.5, color: C.slate, textAlign: "center", marginTop: 8, fontFamily: "IBM Plex Mono, monospace" },
   resolveBtn: { border: `1px solid ${C.teal}`, background: "#fff", color: C.teal, borderRadius: 6, padding: "4px 10px", fontSize: 11.5, fontWeight: 600, cursor: "pointer", whiteSpace: "nowrap" },
+  bulkRow: { display: "flex", alignItems: "center", flexWrap: "wrap", gap: 8, margin: "4px 0 14px" },
+  bulkRowLabel: { fontSize: 11.5, color: C.slate, fontWeight: 600, marginRight: 2 },
+  bulkResolveBtn: { border: `1px solid ${C.line}`, background: C.bg, color: C.ink, borderRadius: 6, padding: "5px 11px", fontSize: 11.5, fontWeight: 600, cursor: "pointer", whiteSpace: "nowrap" },
 };
