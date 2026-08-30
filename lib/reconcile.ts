@@ -12,6 +12,8 @@ export type ReconcilableStudent = {
   courseCode: string;
   courseName: string;
   gender: string;
+  contacts: string;
+  intakeYear: string;
   campus: "MAIN" | "NAKURU";
   flags: RawFlags;
 };
@@ -84,6 +86,7 @@ export type ConflictRow = {
   name: string;
   courseCode: string;
   campus: string;
+  contacts: string;
   setStatuses: string[];
   resolvedTo: string;
 };
@@ -98,6 +101,7 @@ export function buildConflictReport(students: ReconcilableStudent[]): ConflictRo
         name: s.name,
         courseCode: s.courseCode,
         campus: s.campus,
+        contacts: s.contacts,
         setStatuses: r.setFlags.map((f) => STATUS_LABEL[f]),
         resolvedTo:
           r.canonicalStatus === "UNMARKED"

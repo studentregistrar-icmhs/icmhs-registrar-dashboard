@@ -1,6 +1,6 @@
 import { fetchSheetRows } from "./googleSheets";
 import { findStudentRow } from "./rosterLookup";
-import { readFlagsAt } from "./parse";
+import { readFlagsAt, LAYOUT_FOR_WRITE } from "./parse";
 import { reconcile, STATUS_LABEL } from "./reconcile";
 import { TERMS } from "./terms";
 
@@ -16,6 +16,9 @@ export type StudentProfile = {
   name: string;
   courseCode: string;
   courseName: string;
+  gender: string;
+  contacts: string;
+  intakeYear: string;
   campus: "MAIN" | "NAKURU";
   timeline: TimelineEntry[];
 };
@@ -24,9 +27,10 @@ export async function getStudentTimeline(admissionNo: string): Promise<StudentPr
   const loc = await findStudentRow(admissionNo);
   if (!loc) return null;
 
-  const nameCol = 2;
-  const courseCodeCol = 3;
-  const courseNameCol = 4;
+  const layout = LAYOUT_FOR_WRITE[loc.campus];
+  const nameCol = layout.name;
+  const courseCodeCol = layout.courseCode;
+  const courseNameCol = layout.courseName;
 
   const timeline: TimelineEntry[] = [];
 
@@ -69,6 +73,9 @@ export async function getStudentTimeline(admissionNo: string): Promise<StudentPr
     name: String(loc.rawRow[nameCol] ?? "").trim(),
     courseCode: String(loc.rawRow[courseCodeCol] ?? "").trim(),
     courseName: String(loc.rawRow[courseNameCol] ?? "").trim(),
+    gender: String(loc.rawRow[layout.gender] ?? "").trim(),
+    contacts: String(loc.rawRow[layout.contacts] ?? "").trim(),
+    intakeYear: layout.intake !== undefined ? String(loc.rawRow[layout.intake] ?? "").trim() : "",
     campus: loc.campus,
     timeline,
   };

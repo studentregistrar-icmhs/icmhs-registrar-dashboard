@@ -59,6 +59,8 @@ export default function Dashboard({
   const [data, setData] = useState(initialData);
   const [conflicts, setConflicts] = useState(initialConflicts);
   const [campus, setCampus] = useState<"all" | "main" | "nakuru">("all");
+  const [genderFilter, setGenderFilter] = useState<string>("all");
+  const [courseFilter, setCourseFilter] = useState<string>("all");
   const [tab, setTab] = useState<"overview" | "quality">("overview");
   const [query, setQuery] = useState("");
   const [refreshing, setRefreshing] = useState(false);
@@ -78,12 +80,33 @@ export default function Dashboard({
   }, []);
 
   const allStudentsFlat = useMemo(() => {
-    const out: { admissionNo: string; name: string; courseCode: string; courseName: string; campus: string; status: string }[] = [];
+    const out: { admissionNo: string; name: string; courseCode: string; courseName: string; campus: string; gender: string; contacts: string; intakeYear: string; status: string }[] = [];
     for (const [status, list] of Object.entries(data.studentsByStatus)) {
       for (const s of list) out.push({ ...s, status });
     }
     return out;
   }, [data]);
+
+  // Every student for the current term, narrowed by campus + gender + course.
+  // Drives the KPI strip, Status Ledger, and the status drill-down panel, so
+  // those three always agree with each other and with whatever filters are set.
+  const filteredStudents = useMemo(() => {
+    let rows = allStudentsFlat;
+    if (campus !== "all") {
+      const c = campus === "main" ? "MAIN" : "NAKURU";
+      rows = rows.filter((s) => s.campus === c);
+    }
+    if (genderFilter !== "all") rows = rows.filter((s) => s.gender === genderFilter);
+    if (courseFilter !== "all") rows = rows.filter((s) => s.courseCode === courseFilter);
+    return rows;
+  }, [allStudentsFlat, campus, genderFilter, courseFilter]);
+
+  const genderOptions = useMemo(() => Object.keys(data.genders.all).sort(), [data]);
+  const courseOptions = useMemo(
+    () => [...data.programs].sort((a, b) => a.code.localeCompare(b.code)).map((p) => ({ code: p.code, name: p.name })),
+    [data]
+  );
+  const filtersActive = genderFilter !== "all" || courseFilter !== "all";
 
   const globalResults = useMemo(() => {
     const q = globalQuery.trim().toLowerCase();
@@ -98,8 +121,12 @@ export default function Dashboard({
     return rows.slice(0, 200);
   }, [globalQuery, allStudentsFlat, campus]);
 
-  const kpis = data.statusCounts[campus];
-  const total = data.totals[campus === "all" ? "all" : campus];
+  const kpis = useMemo(() => {
+    const counts: Record<string, number> = {};
+    for (const s of filteredStudents) counts[s.status] = (counts[s.status] ?? 0) + 1;
+    return counts;
+  }, [filteredStudents]);
+  const total = filteredStudents.length;
   const genderData = useMemo(
     () => Object.entries(data.genders[campus]).map(([name, value]) => ({ name, value })),
     [data, campus]
@@ -167,8 +194,8 @@ export default function Dashboard({
   }, [conflicts]);
 
   function exportConflicts() {
-    const headers = ["Admission No.", "Name", "Campus", "Course", "Flags Set", "Resolved To"];
-    const rows = conflicts.map((c) => [c.admissionNo, c.name, c.campus, c.courseCode, c.setStatuses.join("; "), c.resolvedTo]);
+    const headers = ["Admission No.", "Name", "Campus", "Course", "Contacts", "Flags Set", "Resolved To"];
+    const rows = conflicts.map((c) => [c.admissionNo, c.name, c.campus, c.courseCode, c.contacts, c.setStatuses.join("; "), c.resolvedTo]);
     downloadCsv(`${termLabel.replace(/\s+/g, "-")}-conflicts.csv`, toCsv(headers, rows));
   }
 
@@ -265,11 +292,7 @@ export default function Dashboard({
 
   const studentPanelList = useMemo(() => {
     if (!selectedStatus) return [];
-    let rows = data.studentsByStatus[selectedStatus] ?? [];
-    if (campus !== "all") {
-      const c = campus === "main" ? "MAIN" : "NAKURU";
-      rows = rows.filter((s) => s.campus === c);
-    }
+    let rows = filteredStudents.filter((s) => s.status === selectedStatus);
     if (studentQuery.trim()) {
       const q = studentQuery.trim().toLowerCase();
       rows = rows.filter(
@@ -277,7 +300,7 @@ export default function Dashboard({
       );
     }
     return rows;
-  }, [selectedStatus, data, campus, studentQuery]);
+  }, [selectedStatus, filteredStudents, studentQuery]);
 
   return (
     <div style={styles.page}>
@@ -319,6 +342,23 @@ export default function Dashboard({
               </button>
             ))}
           </div>
+          <select value={genderFilter} onChange={(e) => setGenderFilter(e.target.value)} style={styles.filterSelect}>
+            <option value="all">All genders</option>
+            {genderOptions.map((g) => (
+              <option key={g} value={g}>{g}</option>
+            ))}
+          </select>
+          <select value={courseFilter} onChange={(e) => setCourseFilter(e.target.value)} style={styles.filterSelect}>
+            <option value="all">All courses</option>
+            {courseOptions.map((c) => (
+              <option key={c.code} value={c.code}>{c.name || c.code}</option>
+            ))}
+          </select>
+          {filtersActive && (
+            <button onClick={() => { setGenderFilter("all"); setCourseFilter("all"); }} style={styles.clearFilterBtn}>
+              Clear filters
+            </button>
+          )}
           {isLive && (
             <>
               <button
@@ -404,7 +444,14 @@ export default function Dashboard({
             </div>
           </section>
 
-          {previousData && previousData.totals.all > 0 && (
+          {previousData && previousData.totals.all > 0 && filtersActive && (
+            <div style={{ ...styles.ledgerFoot, maxWidth: 900 }}>
+              Term Trend is hidden while a gender or course filter is active — previous-term
+              figures aren't broken down that finely. Clear filters to see it again.
+            </div>
+          )}
+
+          {previousData && previousData.totals.all > 0 && !filtersActive && (
             <section style={styles.card}>
               <div style={styles.cardHead}>
                 <h2 style={styles.h2}>Term Trend</h2>
@@ -429,22 +476,24 @@ export default function Dashboard({
             </section>
           )}
 
-          <section style={{ ...styles.card, maxWidth: 460 }}>
-            <div style={styles.cardHead}><h2 style={styles.h2}>Gender Split</h2></div>
-            <div style={{ width: "100%", height: 260 }}>
-              <ResponsiveContainer>
-                <PieChart>
-                  <Pie data={genderData} dataKey="value" nameKey="name" innerRadius={62} outerRadius={95} paddingAngle={2}>
-                    {genderData.map((e) => (
-                      <Cell key={e.name} fill={e.name === "Female" ? C.teal : C.amber} />
-                    ))}
-                  </Pie>
-                  <Tooltip formatter={(v: any, n: any) => [fmt(v), n]} />
-                  <Legend />
-                </PieChart>
-              </ResponsiveContainer>
-            </div>
-          </section>
+          {genderFilter === "all" && (
+            <section style={{ ...styles.card, maxWidth: 460 }}>
+              <div style={styles.cardHead}><h2 style={styles.h2}>Gender Split</h2></div>
+              <div style={{ width: "100%", height: 260 }}>
+                <ResponsiveContainer>
+                  <PieChart>
+                    <Pie data={genderData} dataKey="value" nameKey="name" innerRadius={62} outerRadius={95} paddingAngle={2}>
+                      {genderData.map((e) => (
+                        <Cell key={e.name} fill={e.name === "Female" ? C.teal : C.amber} />
+                      ))}
+                    </Pie>
+                    <Tooltip formatter={(v: any, n: any) => [fmt(v), n]} />
+                    <Legend />
+                  </PieChart>
+                </ResponsiveContainer>
+              </div>
+            </section>
+          )}
 
           <section style={styles.card}>
             <div style={styles.cardHead}><h2 style={styles.h2}>Largest Programmes</h2></div>
@@ -561,6 +610,7 @@ export default function Dashboard({
                     <th style={{ ...styles.th, textAlign: "left" }}>Name</th>
                     <th style={styles.th}>Campus</th>
                     <th style={styles.th}>Course</th>
+                    <th style={{ ...styles.th, textAlign: "left" }}>Contacts</th>
                     <th style={{ ...styles.th, textAlign: "left" }}>Flags Set</th>
                     <th style={{ ...styles.th, textAlign: "left" }}>Resolved To</th>
                     <th style={styles.th}></th>
@@ -577,6 +627,7 @@ export default function Dashboard({
                       <td style={styles.tdName}>{c.name}</td>
                       <td style={styles.tdNum}>{c.campus}</td>
                       <td style={styles.tdNum}>{c.courseCode}</td>
+                      <td style={styles.tdName}>{c.contacts || "—"}</td>
                       <td style={{ ...styles.tdName, color: C.rose }}>{c.setStatuses.join(", ")}</td>
                       <td style={{ ...styles.tdName, fontWeight: 600 }}>{c.resolvedTo}</td>
                       <td style={styles.tdNum}>
@@ -764,7 +815,7 @@ function StudentListPanel({
   onClose,
 }: {
   status: string;
-  students: { admissionNo: string; name: string; courseCode: string; courseName: string; campus: string }[];
+  students: { admissionNo: string; name: string; courseCode: string; courseName: string; campus: string; contacts: string }[];
   query: string;
   onQueryChange: (q: string) => void;
   onClose: () => void;
@@ -795,8 +846,8 @@ function StudentListPanel({
                 downloadCsv(
                   `${status.replace(/\s+/g, "-")}-students.csv`,
                   toCsv(
-                    ["Admission No.", "Name", "Programme", "Campus"],
-                    students.map((s) => [s.admissionNo, s.name, s.courseName || s.courseCode, s.campus])
+                    ["Admission No.", "Name", "Programme", "Campus", "Contacts"],
+                    students.map((s) => [s.admissionNo, s.name, s.courseName || s.courseCode, s.campus, s.contacts])
                   )
                 )
               }
@@ -813,6 +864,7 @@ function StudentListPanel({
                 <th style={{ ...panelStyles.th, textAlign: "left" }}>Name</th>
                 <th style={{ ...panelStyles.th, textAlign: "left" }}>Programme</th>
                 <th style={panelStyles.th}>Campus</th>
+                <th style={{ ...panelStyles.th, textAlign: "left" }}>Contacts</th>
               </tr>
             </thead>
             <tbody>
@@ -826,11 +878,12 @@ function StudentListPanel({
                   <td style={panelStyles.tdName}>{s.name}</td>
                   <td style={panelStyles.tdName}>{s.courseName || s.courseCode}</td>
                   <td style={panelStyles.tdNum}>{s.campus}</td>
+                  <td style={panelStyles.tdName}>{s.contacts || "—"}</td>
                 </tr>
               ))}
               {students.length === 0 && (
                 <tr>
-                  <td colSpan={4} style={{ padding: "20px", textAlign: "center", color: C.slate }}>
+                  <td colSpan={5} style={{ padding: "20px", textAlign: "center", color: C.slate }}>
                     No matching students.
                   </td>
                 </tr>
@@ -870,6 +923,8 @@ const styles: Record<string, React.CSSProperties> = {
   h1: { fontFamily: "Space Grotesk, sans-serif", fontWeight: 700, fontSize: 30, margin: 0, lineHeight: 1.1 },
   sub: { fontSize: 12.5, color: C.slate, marginTop: 4, fontFamily: "IBM Plex Mono, monospace" },
   toggleGroup: { display: "flex", background: "#fff", border: `1px solid ${C.line}`, borderRadius: 8, padding: 3, gap: 2 },
+  filterSelect: { border: `1px solid ${C.line}`, background: "#fff", color: C.ink, borderRadius: 8, padding: "8px 10px", fontSize: 12.5, fontFamily: "Inter, sans-serif", cursor: "pointer", maxWidth: 170 },
+  clearFilterBtn: { border: `1px solid ${C.rose}`, background: "#fff", color: C.rose, borderRadius: 8, padding: "8px 12px", fontSize: 12.5, fontWeight: 600, cursor: "pointer", whiteSpace: "nowrap" },
   toggleBtn: { border: "none", background: "transparent", padding: "8px 14px", fontSize: 13, fontWeight: 500, color: C.slate, borderRadius: 6, cursor: "pointer" },
   toggleBtnActive: { background: C.ink, color: "#fff" },
   refreshBtn: { border: `1px solid ${C.ink}`, background: C.ink, color: "#fff", padding: "9px 16px", borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: "pointer" },

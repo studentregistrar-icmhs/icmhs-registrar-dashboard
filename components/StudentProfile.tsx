@@ -54,7 +54,11 @@ export default function StudentProfile({ initialProfile }: { initialProfile: Pro
       <Link href="/students" style={styles.backLink}>← Search</Link>
       <div style={styles.eyebrow}>{profile.admissionNo}</div>
       <h1 style={styles.h1}>{profile.name}</h1>
-      <div style={styles.sub}>{profile.courseName || profile.courseCode} · {profile.campus}</div>
+      <div style={styles.sub}>{profile.courseName || profile.courseCode} · {profile.campus}{profile.gender ? ` · ${profile.gender}` : ""}</div>
+      <div style={styles.contactRow}>
+        {profile.contacts && <span>📞 {profile.contacts}</span>}
+        {profile.intakeYear && <span>Intake: {profile.intakeYear}</span>}
+      </div>
 
       <div style={styles.timeline}>
         {profile.timeline.map((entry) => (
@@ -153,7 +157,8 @@ const styles: Record<string, React.CSSProperties> = {
   backLink: { fontFamily: "IBM Plex Mono, monospace", fontSize: 12, color: C.slate, textDecoration: "none", display: "inline-block", marginBottom: 20 },
   eyebrow: { fontFamily: "IBM Plex Mono, monospace", fontSize: 12, color: C.teal, fontWeight: 600 },
   h1: { fontFamily: "Space Grotesk, sans-serif", fontWeight: 700, fontSize: 28, margin: "4px 0 0" },
-  sub: { fontSize: 13, color: C.slate, marginBottom: 24 },
+  sub: { fontSize: 13, color: C.slate, marginBottom: 6 },
+  contactRow: { display: "flex", gap: 16, fontSize: 12.5, color: C.slate, fontFamily: "IBM Plex Mono, monospace", marginBottom: 24 },
   timeline: { display: "flex", flexDirection: "column", gap: 10 },
   row: { display: "flex", justifyContent: "space-between", alignItems: "center", background: "#fff", border: `1px solid ${C.line}`, borderRadius: 8, padding: "14px 16px" },
   rowLabel: { fontFamily: "Space Grotesk, sans-serif", fontWeight: 600, fontSize: 14 },

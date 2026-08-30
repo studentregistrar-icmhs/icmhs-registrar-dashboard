@@ -23,7 +23,7 @@ function flagsFromLabel(label: string): RawFlags {
   return { ...EMPTY_FLAGS, [key]: true };
 }
 
-type Roster = { admissionNo: string; name: string; courseCode: string; courseName: string; gender: string; campus: "MAIN" | "NAKURU" }[];
+type Roster = { admissionNo: string; name: string; courseCode: string; courseName: string; gender: string; contacts: string; intakeYear: string; campus: "MAIN" | "NAKURU" }[];
 
 /**
  * Builds ReconcilableStudent[] for a Status-Log-based term by joining the
@@ -51,6 +51,8 @@ export function buildFromStatusLog(
     courseCode: r.courseCode,
     courseName: r.courseName,
     gender: r.gender,
+    contacts: r.contacts,
+    intakeYear: r.intakeYear,
     campus: r.campus,
     flags: flagsFromLabel(latestStatusByAdmission.get(r.admissionNo) ?? ""),
   }));

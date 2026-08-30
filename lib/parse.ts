@@ -17,6 +17,8 @@ export type Student = {
   courseCode: string;
   courseName: string;
   gender: string;
+  contacts: string;
+  intakeYear: string;
   campus: Campus;
   flagsJanApr: RawFlags;
   flagsMayAug: RawFlags;
@@ -31,12 +33,19 @@ const isBlank = (v: unknown) => {
 // Column layout confirmed against the MAIN CAMPUS / NAKURU CAMPUS tabs used
 // by the deferment app (admission no. = col B, name = C, programme name = E,
 // campus code = J, "Deferred - Approved" = col W on MAIN CAMPUS).
+// Column F on both tabs is Contacts/Phone Number. Column G (Intake/Year) only
+// exists on MAIN CAMPUS today — Nakuru doesn't have it yet, so `intake` is
+// left unset there. Once Nakuru's sheet gets an Intake/Year column, add
+// `intake` to NAKURU below (and shift `gender`/`janApr`/`mayAug` by 1 if the
+// new column is inserted before them rather than appended).
 const LAYOUT = {
   MAIN: {
     admissionNo: 1,
     name: 2,
     courseCode: 3,
     courseName: 4,
+    contacts: 5,
+    intake: 6,
     gender: 7,
     janApr: 10, // 8 consecutive columns starting here
     mayAug: 18,
@@ -46,6 +55,8 @@ const LAYOUT = {
     name: 2,
     courseCode: 3,
     courseName: 4,
+    contacts: 5,
+    intake: undefined as number | undefined,
     gender: 6,
     janApr: 8,
     mayAug: 16,
@@ -89,6 +100,8 @@ export function toReconcilable(
     courseCode: s.courseCode,
     courseName: s.courseName,
     gender: s.gender,
+    contacts: s.contacts,
+    intakeYear: s.intakeYear,
     campus: s.campus,
     flags: s[block],
   }));
@@ -107,6 +120,8 @@ export function parseCampusRows(rows: any[][], campus: Campus): Student[] {
       courseCode: String(row[layout.courseCode] ?? "").trim(),
       courseName: String(row[layout.courseName] ?? "").trim(),
       gender: String(row[layout.gender] ?? "").trim(),
+      contacts: String(row[layout.contacts] ?? "").trim(),
+      intakeYear: layout.intake !== undefined ? String(row[layout.intake] ?? "").trim() : "",
       campus,
       flagsJanApr: readFlags(row, layout.janApr),
       flagsMayAug: readFlags(row, layout.mayAug),

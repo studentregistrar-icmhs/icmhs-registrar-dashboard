@@ -7,6 +7,9 @@ export type StudentSummary = {
   courseCode: string;
   courseName: string;
   campus: "MAIN" | "NAKURU";
+  gender: string;
+  contacts: string;
+  intakeYear: string;
 };
 
 export type DashboardData = {
@@ -118,6 +121,9 @@ export function buildDashboardData(students: ReconcilableStudent[]): DashboardDa
       courseCode: s.courseCode,
       courseName: s.courseName,
       campus: s.campus,
+      gender: s.gender,
+      contacts: s.contacts,
+      intakeYear: s.intakeYear,
     });
   }
 
