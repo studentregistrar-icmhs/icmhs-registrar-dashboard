@@ -1,5 +1,6 @@
 import { RawFlags } from "./parse";
 import { reconcile, STATUS_LABEL, ReconcilableStudent } from "./reconcile";
+import { getDepartment } from "./departments";
 
 export type StudentSummary = {
   admissionNo: string;
@@ -32,6 +33,14 @@ export type DashboardData = {
     totalNakuru: number;
     total: number;
     statusCounts: Record<string, number>;
+  }[];
+  departments: {
+    name: string;
+    totalMain: number;
+    totalNakuru: number;
+    total: number;
+    statusCounts: Record<string, number>;
+    courseCodes: string[];
   }[];
   /** Every student, grouped by their canonical status label. Powers the
    * "click a status to see who's in it" drill-down in the UI. */
@@ -106,6 +115,34 @@ export function buildDashboardData(students: ReconcilableStudent[]): DashboardDa
     }))
     .sort((a, b) => b.total - a.total);
 
+  const departmentMap = new Map<
+    string,
+    { totalMain: number; totalNakuru: number; statusCounts: Record<string, number>; courseCodes: Set<string> }
+  >();
+  for (const s of students) {
+    const dept = getDepartment(s.courseCode);
+    if (!departmentMap.has(dept)) {
+      departmentMap.set(dept, { totalMain: 0, totalNakuru: 0, statusCounts: emptyStatusCounts(), courseCodes: new Set() });
+    }
+    const d = departmentMap.get(dept)!;
+    if (s.campus === "MAIN") d.totalMain += 1;
+    else d.totalNakuru += 1;
+    if (s.courseCode) d.courseCodes.add(s.courseCode);
+    const r = reconcile(s.flags);
+    const label = r.canonicalStatus === "UNMARKED" ? "Unmarked" : STATUS_LABEL[r.canonicalStatus];
+    d.statusCounts[label] += 1;
+  }
+  const departments = Array.from(departmentMap.entries())
+    .map(([name, d]) => ({
+      name,
+      totalMain: d.totalMain,
+      totalNakuru: d.totalNakuru,
+      total: d.totalMain + d.totalNakuru,
+      statusCounts: d.statusCounts,
+      courseCodes: Array.from(d.courseCodes).sort(),
+    }))
+    .sort((a, b) => b.total - a.total);
+
   const conflictCount = students.filter((s) => reconcile(s.flags).hasConflict).length;
 
   const studentsByStatus: Record<string, StudentSummary[]> = {};
@@ -141,6 +178,7 @@ export function buildDashboardData(students: ReconcilableStudent[]): DashboardDa
       nakuru: genderTally(nakuru),
     },
     programs,
+    departments,
     studentsByStatus,
     conflictCount,
   };

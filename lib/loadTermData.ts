@@ -23,6 +23,7 @@ const EMPTY_DASHBOARD: DashboardData = {
   statusCounts: { all: {}, main: {}, nakuru: {} },
   genders: { all: {}, main: {}, nakuru: {} },
   programs: [],
+  departments: [],
   studentsByStatus: {},
   conflictCount: 0,
 };

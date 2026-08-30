@@ -9,6 +9,7 @@ import {
 import type { DashboardData } from "@/lib/aggregate";
 import type { ConflictRow } from "@/lib/reconcile";
 import { toCsv, downloadCsv } from "@/lib/csv";
+import { getDepartment } from "@/lib/departments";
 
 const C = {
   ink: "#122A28", bg: "#EEF1EA", card: "#FFFFFF", line: "#D9DFD3",
@@ -61,6 +62,7 @@ export default function Dashboard({
   const [campus, setCampus] = useState<"all" | "main" | "nakuru">("all");
   const [genderFilter, setGenderFilter] = useState<string>("all");
   const [courseFilter, setCourseFilter] = useState<string>("all");
+  const [departmentFilter, setDepartmentFilter] = useState<string>("all");
   const [tab, setTab] = useState<"overview" | "quality">("overview");
   const [query, setQuery] = useState("");
   const [refreshing, setRefreshing] = useState(false);
@@ -98,15 +100,20 @@ export default function Dashboard({
     }
     if (genderFilter !== "all") rows = rows.filter((s) => s.gender === genderFilter);
     if (courseFilter !== "all") rows = rows.filter((s) => s.courseCode === courseFilter);
+    if (departmentFilter !== "all") rows = rows.filter((s) => getDepartment(s.courseCode) === departmentFilter);
     return rows;
-  }, [allStudentsFlat, campus, genderFilter, courseFilter]);
+  }, [allStudentsFlat, campus, genderFilter, courseFilter, departmentFilter]);
 
   const genderOptions = useMemo(() => Object.keys(data.genders.all).sort(), [data]);
   const courseOptions = useMemo(
     () => [...data.programs].sort((a, b) => a.code.localeCompare(b.code)).map((p) => ({ code: p.code, name: p.name })),
     [data]
   );
-  const filtersActive = genderFilter !== "all" || courseFilter !== "all";
+  const departmentOptions = useMemo(
+    () => [...(data.departments ?? [])].sort((a, b) => b.total - a.total).map((d) => d.name),
+    [data]
+  );
+  const filtersActive = genderFilter !== "all" || courseFilter !== "all" || departmentFilter !== "all";
 
   const globalResults = useMemo(() => {
     const q = globalQuery.trim().toLowerCase();
@@ -138,6 +145,13 @@ export default function Dashboard({
       .sort((a, b) => (b as any)[key] - (a as any)[key])
       .slice(0, 12)
       .map((p) => ({ code: p.code, name: p.name, value: (p as any)[key] }));
+  }, [data, campus]);
+  const departmentChartData = useMemo(() => {
+    const key = campus === "main" ? "totalMain" : campus === "nakuru" ? "totalNakuru" : "total";
+    return [...(data.departments ?? [])]
+      .filter((d) => (d as any)[key] > 0)
+      .sort((a, b) => (b as any)[key] - (a as any)[key])
+      .map((d) => ({ name: d.name.replace(/^School of /, ""), value: (d as any)[key] }));
   }, [data, campus]);
   const programsFiltered = useMemo(() => {
     let rows = data.programs.filter((p) => {
@@ -342,6 +356,12 @@ export default function Dashboard({
               </button>
             ))}
           </div>
+          <select value={departmentFilter} onChange={(e) => setDepartmentFilter(e.target.value)} style={styles.filterSelect}>
+            <option value="all">All departments</option>
+            {departmentOptions.map((d) => (
+              <option key={d} value={d}>{d}</option>
+            ))}
+          </select>
           <select value={genderFilter} onChange={(e) => setGenderFilter(e.target.value)} style={styles.filterSelect}>
             <option value="all">All genders</option>
             {genderOptions.map((g) => (
@@ -355,7 +375,7 @@ export default function Dashboard({
             ))}
           </select>
           {filtersActive && (
-            <button onClick={() => { setGenderFilter("all"); setCourseFilter("all"); }} style={styles.clearFilterBtn}>
+            <button onClick={() => { setGenderFilter("all"); setCourseFilter("all"); setDepartmentFilter("all"); }} style={styles.clearFilterBtn}>
               Clear filters
             </button>
           )}
@@ -490,6 +510,36 @@ export default function Dashboard({
                     <Tooltip formatter={(v: any, n: any) => [fmt(v), n]} />
                     <Legend />
                   </PieChart>
+                </ResponsiveContainer>
+              </div>
+            </section>
+          )}
+
+          {departmentChartData.length > 0 && (
+            <section style={styles.card}>
+              <div style={styles.cardHead}>
+                <h2 style={styles.h2}>By Department</h2>
+                <span style={styles.cardNote}>students per School/Department · {departmentFilter === "all" ? "click a bar to filter" : "filtered"}</span>
+              </div>
+              <div style={{ width: "100%", height: Math.max(220, departmentChartData.length * 34) }}>
+                <ResponsiveContainer>
+                  <BarChart
+                    data={departmentChartData}
+                    layout="vertical"
+                    margin={{ top: 4, right: 30, left: 8, bottom: 4 }}
+                    onClick={(e: any) => {
+                      const name = e?.activePayload?.[0]?.payload?.name;
+                      if (!name) return;
+                      const full = (data.departments ?? []).find((d) => d.name.replace(/^School of /, "") === name);
+                      if (full) setDepartmentFilter(full.name);
+                    }}
+                  >
+                    <CartesianGrid stroke={C.line} horizontal={false} />
+                    <XAxis type="number" tick={{ fontSize: 11, fill: C.slate }} />
+                    <YAxis type="category" dataKey="name" width={150} tick={{ fontSize: 11, fill: C.ink }} />
+                    <Tooltip formatter={(v: any) => [fmt(v), "Students"]} />
+                    <Bar dataKey="value" fill={C.violet} radius={[0, 4, 4, 0]} barSize={16} style={{ cursor: "pointer" }} />
+                  </BarChart>
                 </ResponsiveContainer>
               </div>
             </section>
