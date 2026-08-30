@@ -56,3 +56,22 @@ export function getPreviousTerm(slug: string): TermConfig | undefined {
 export function getDefaultTerm(): TermConfig {
   return TERMS.find((t) => t.isDefault) ?? TERMS[0];
 }
+
+/**
+ * A term's year and the month its period ends in — used to tell whether a
+ * student's Intake/Year falls after this term (i.e. they hadn't joined yet).
+ * Returns null for static historical snapshots, which are already fixed and
+ * don't need this filtering applied at load time.
+ */
+export function getTermPeriod(term: TermConfig): { year: number; endMonth: number } | null {
+  const yearMatch = term.slug.match(/(\d{4})/);
+  if (!yearMatch) return null;
+  const year = Number(yearMatch[1]);
+  if (term.source.kind === "live-legacy") {
+    return { year, endMonth: term.source.block === "flagsJanApr" ? 4 : 8 };
+  }
+  if (term.source.kind === "live-statuslog") {
+    return { year, endMonth: 12 };
+  }
+  return null;
+}
