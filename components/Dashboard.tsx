@@ -10,6 +10,7 @@ import type { DashboardData } from "@/lib/aggregate";
 import type { ConflictRow } from "@/lib/reconcile";
 import { toCsv, downloadCsv } from "@/lib/csv";
 import { getDepartment } from "@/lib/departments";
+import { parseIntake } from "@/lib/intake";
 
 const C = {
   ink: "#122A28", bg: "#EEF1EA", card: "#FFFFFF", line: "#D9DFD3",
@@ -63,6 +64,7 @@ export default function Dashboard({
   const [genderFilter, setGenderFilter] = useState<string>("all");
   const [courseFilter, setCourseFilter] = useState<string>("all");
   const [departmentFilter, setDepartmentFilter] = useState<string>("all");
+  const [intakeFilter, setIntakeFilter] = useState<string>("all");
   const [tab, setTab] = useState<"overview" | "quality">("overview");
   const [query, setQuery] = useState("");
   const [refreshing, setRefreshing] = useState(false);
@@ -101,8 +103,9 @@ export default function Dashboard({
     if (genderFilter !== "all") rows = rows.filter((s) => s.gender === genderFilter);
     if (courseFilter !== "all") rows = rows.filter((s) => s.courseCode === courseFilter);
     if (departmentFilter !== "all") rows = rows.filter((s) => getDepartment(s.courseCode) === departmentFilter);
+    if (intakeFilter !== "all") rows = rows.filter((s) => s.intakeYear === intakeFilter);
     return rows;
-  }, [allStudentsFlat, campus, genderFilter, courseFilter, departmentFilter]);
+  }, [allStudentsFlat, campus, genderFilter, courseFilter, departmentFilter, intakeFilter]);
 
   const genderOptions = useMemo(() => Object.keys(data.genders.all).sort(), [data]);
   const courseOptions = useMemo(
@@ -113,7 +116,11 @@ export default function Dashboard({
     () => [...(data.departments ?? [])].sort((a, b) => b.total - a.total).map((d) => d.name),
     [data]
   );
-  const filtersActive = genderFilter !== "all" || courseFilter !== "all" || departmentFilter !== "all";
+  const intakeOptions = useMemo(
+    () => [...new Set(allStudentsFlat.map((s) => s.intakeYear).filter((v) => v && v.trim() !== ""))].sort(),
+    [allStudentsFlat]
+  );
+  const filtersActive = genderFilter !== "all" || courseFilter !== "all" || departmentFilter !== "all" || intakeFilter !== "all";
 
   const globalResults = useMemo(() => {
     const q = globalQuery.trim().toLowerCase();
@@ -153,6 +160,33 @@ export default function Dashboard({
       .sort((a, b) => (b as any)[key] - (a as any)[key])
       .map((d) => ({ name: d.name.replace(/^School of /, ""), value: (d as any)[key] }));
   }, [data, campus]);
+  // Everything except the intake filter itself, so the intake chart always
+  // shows the full spread of cohorts even while one is selected.
+  const studentsForIntakeChart = useMemo(() => {
+    let rows = allStudentsFlat;
+    if (campus !== "all") {
+      const c = campus === "main" ? "MAIN" : "NAKURU";
+      rows = rows.filter((s) => s.campus === c);
+    }
+    if (genderFilter !== "all") rows = rows.filter((s) => s.gender === genderFilter);
+    if (courseFilter !== "all") rows = rows.filter((s) => s.courseCode === courseFilter);
+    if (departmentFilter !== "all") rows = rows.filter((s) => getDepartment(s.courseCode) === departmentFilter);
+    return rows;
+  }, [allStudentsFlat, campus, genderFilter, courseFilter, departmentFilter]);
+  const intakeChartData = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const s of studentsForIntakeChart) {
+      if (!s.intakeYear || s.intakeYear.trim() === "") continue;
+      counts.set(s.intakeYear, (counts.get(s.intakeYear) ?? 0) + 1);
+    }
+    const sortKey = (name: string) => {
+      const p = parseIntake(name);
+      return p ? p.year * 12 + p.month : Infinity;
+    };
+    return [...counts.entries()]
+      .map(([name, value]) => ({ name, value }))
+      .sort((a, b) => sortKey(a.name) - sortKey(b.name));
+  }, [studentsForIntakeChart]);
   const programsFiltered = useMemo(() => {
     let rows = data.programs.filter((p) => {
       if (campus === "main" && p.totalMain === 0) return false;
@@ -356,6 +390,12 @@ export default function Dashboard({
               </button>
             ))}
           </div>
+          <select value={intakeFilter} onChange={(e) => setIntakeFilter(e.target.value)} style={styles.filterSelect}>
+            <option value="all">All intakes</option>
+            {intakeOptions.map((i) => (
+              <option key={i} value={i}>{i}</option>
+            ))}
+          </select>
           <select value={departmentFilter} onChange={(e) => setDepartmentFilter(e.target.value)} style={styles.filterSelect}>
             <option value="all">All departments</option>
             {departmentOptions.map((d) => (
@@ -375,7 +415,7 @@ export default function Dashboard({
             ))}
           </select>
           {filtersActive && (
-            <button onClick={() => { setGenderFilter("all"); setCourseFilter("all"); setDepartmentFilter("all"); }} style={styles.clearFilterBtn}>
+            <button onClick={() => { setGenderFilter("all"); setCourseFilter("all"); setDepartmentFilter("all"); setIntakeFilter("all"); }} style={styles.clearFilterBtn}>
               Clear filters
             </button>
           )}
@@ -541,6 +581,37 @@ export default function Dashboard({
                     <Bar dataKey="value" fill={C.violet} radius={[0, 4, 4, 0]} barSize={16} style={{ cursor: "pointer" }} />
                   </BarChart>
                 </ResponsiveContainer>
+              </div>
+            </section>
+          )}
+
+          {intakeChartData.length > 0 && (
+            <section style={styles.card}>
+              <div style={styles.cardHead}>
+                <h2 style={styles.h2}>By Intake</h2>
+                <span style={styles.cardNote}>students per intake cohort, oldest first · {intakeFilter === "all" ? "click a bar to filter" : "filtered"}</span>
+              </div>
+              <div style={{ width: "100%", height: Math.max(220, intakeChartData.length * 30) }}>
+                <ResponsiveContainer>
+                  <BarChart
+                    data={intakeChartData}
+                    layout="vertical"
+                    margin={{ top: 4, right: 30, left: 8, bottom: 4 }}
+                    onClick={(e: any) => {
+                      const name = e?.activePayload?.[0]?.payload?.name;
+                      if (name) setIntakeFilter(name);
+                    }}
+                  >
+                    <CartesianGrid stroke={C.line} horizontal={false} />
+                    <XAxis type="number" tick={{ fontSize: 11, fill: C.slate }} />
+                    <YAxis type="category" dataKey="name" width={100} tick={{ fontSize: 11, fill: C.ink }} />
+                    <Tooltip formatter={(v: any) => [fmt(v), "Students"]} />
+                    <Bar dataKey="value" fill={C.sage} radius={[0, 4, 4, 0]} barSize={14} style={{ cursor: "pointer" }} />
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+              <div style={{ ...styles.ledgerFoot, marginTop: 10 }}>
+                Only counts students with a recognized "MON - YYYY" Intake value — currently MAIN campus only.
               </div>
             </section>
           )}
