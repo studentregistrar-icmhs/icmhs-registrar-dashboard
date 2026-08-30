@@ -44,6 +44,8 @@ export default function Dashboard({ initialData, initialConflicts, termLabel, is
   const [tab, setTab] = useState<"overview" | "quality">("overview");
   const [query, setQuery] = useState("");
   const [refreshing, setRefreshing] = useState(false);
+  const [selectedStatus, setSelectedStatus] = useState<string | null>(null);
+  const [studentQuery, setStudentQuery] = useState("");
 
   const kpis = data.statusCounts[campus];
   const total = data.totals[campus === "all" ? "all" : campus];
@@ -89,6 +91,22 @@ export default function Dashboard({ initialData, initialConflicts, termLabel, is
   }
 
   const maxLedger = Math.max(...STATUS_ORDER.map((s) => kpis[s.label] || 0), 1);
+
+  const studentPanelList = useMemo(() => {
+    if (!selectedStatus) return [];
+    let rows = data.studentsByStatus[selectedStatus] ?? [];
+    if (campus !== "all") {
+      const c = campus === "main" ? "MAIN" : "NAKURU";
+      rows = rows.filter((s) => s.campus === c);
+    }
+    if (studentQuery.trim()) {
+      const q = studentQuery.trim().toLowerCase();
+      rows = rows.filter(
+        (s) => s.name.toLowerCase().includes(q) || s.admissionNo.toLowerCase().includes(q)
+      );
+    }
+    return rows;
+  }, [selectedStatus, data, campus, studentQuery]);
 
   return (
     <div style={styles.page}>
@@ -143,7 +161,13 @@ export default function Dashboard({ initialData, initialConflicts, termLabel, is
           <section style={styles.kpiStrip}>
             <KpiCard label="Total Roll" value={total} accent={C.ink} big />
             {STATUS_ORDER.filter((s) => s.label !== "Unmarked").map((s) => (
-              <KpiCard key={s.label} label={s.label} value={kpis[s.label] ?? 0} accent={s.color} />
+              <KpiCard
+                key={s.label}
+                label={s.label}
+                value={kpis[s.label] ?? 0}
+                accent={s.color}
+                onClick={() => setSelectedStatus(s.label)}
+              />
             ))}
           </section>
 
@@ -160,7 +184,11 @@ export default function Dashboard({ initialData, initialConflicts, termLabel, is
                 const pct = total ? ((val / total) * 100).toFixed(1) : "0.0";
                 const width = (val / maxLedger) * 100;
                 return (
-                  <div key={s.label} style={styles.ledgerRow}>
+                  <div
+                    key={s.label}
+                    style={{ ...styles.ledgerRow, cursor: "pointer" }}
+                    onClick={() => setSelectedStatus(s.label)}
+                  >
                     <div style={styles.ledgerLabel}>{s.label}</div>
                     <div style={styles.ledgerBarTrack}>
                       <div style={{ ...styles.ledgerBarFill, width: `${width}%`, background: s.color }} />
@@ -310,18 +338,117 @@ export default function Dashboard({ initialData, initialConflicts, termLabel, is
           ? "Live from the MAIN CAMPUS / NAKURU CAMPUS Google Sheet used by icmhsdeferment."
           : "Static snapshot — this term's source workbook is no longer being updated."}
       </footer>
+
+      {selectedStatus && (
+        <StudentListPanel
+          status={selectedStatus}
+          students={studentPanelList}
+          query={studentQuery}
+          onQueryChange={setStudentQuery}
+          onClose={() => {
+            setSelectedStatus(null);
+            setStudentQuery("");
+          }}
+        />
+      )}
     </div>
   );
 }
 
-function KpiCard({ label, value, accent, big }: { label: string; value: number; accent: string; big?: boolean }) {
+function KpiCard({ label, value, accent, big, onClick }: { label: string; value: number; accent: string; big?: boolean; onClick?: () => void }) {
   return (
-    <div style={{ ...styles.kpiCard, borderTopColor: accent }}>
+    <div
+      style={{ ...styles.kpiCard, borderTopColor: accent, cursor: onClick ? "pointer" : "default" }}
+      onClick={onClick}
+    >
       <div style={styles.kpiLabel}>{label}</div>
       <div style={{ ...styles.kpiValue, fontSize: big ? 34 : 26 }}>{fmt(value)}</div>
     </div>
   );
 }
+
+function StudentListPanel({
+  status,
+  students,
+  query,
+  onQueryChange,
+  onClose,
+}: {
+  status: string;
+  students: { admissionNo: string; name: string; courseCode: string; courseName: string; campus: string }[];
+  query: string;
+  onQueryChange: (q: string) => void;
+  onClose: () => void;
+}) {
+  return (
+    <div style={panelStyles.overlay} onClick={onClose}>
+      <div style={panelStyles.panel} onClick={(e) => e.stopPropagation()}>
+        <div style={panelStyles.header}>
+          <div>
+            <div style={panelStyles.eyebrow}>STATUS</div>
+            <h2 style={panelStyles.title}>{status}</h2>
+          </div>
+          <button style={panelStyles.closeBtn} onClick={onClose}>✕</button>
+        </div>
+        <input
+          value={query}
+          onChange={(e) => onQueryChange(e.target.value)}
+          placeholder="Search name or admission no…"
+          style={panelStyles.search}
+          autoFocus
+        />
+        <div style={panelStyles.count}>{fmt(students.length)} student{students.length === 1 ? "" : "s"}</div>
+        <div style={panelStyles.listWrap}>
+          <table style={panelStyles.table}>
+            <thead>
+              <tr>
+                <th style={panelStyles.th}>Admission No.</th>
+                <th style={{ ...panelStyles.th, textAlign: "left" }}>Name</th>
+                <th style={{ ...panelStyles.th, textAlign: "left" }}>Programme</th>
+                <th style={panelStyles.th}>Campus</th>
+              </tr>
+            </thead>
+            <tbody>
+              {students.map((s, i) => (
+                <tr key={s.admissionNo + i} style={i % 2 ? panelStyles.trOdd : undefined}>
+                  <td style={panelStyles.tdCode}>{s.admissionNo}</td>
+                  <td style={panelStyles.tdName}>{s.name}</td>
+                  <td style={panelStyles.tdName}>{s.courseName || s.courseCode}</td>
+                  <td style={panelStyles.tdNum}>{s.campus}</td>
+                </tr>
+              ))}
+              {students.length === 0 && (
+                <tr>
+                  <td colSpan={4} style={{ padding: "20px", textAlign: "center", color: C.slate }}>
+                    No matching students.
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+const panelStyles: Record<string, React.CSSProperties> = {
+  overlay: { position: "fixed", inset: 0, background: "rgba(18,42,40,0.45)", display: "flex", justifyContent: "flex-end", zIndex: 50 },
+  panel: { background: "#fff", width: "min(560px, 100%)", height: "100%", padding: "24px 24px 16px", boxSizing: "border-box", display: "flex", flexDirection: "column", boxShadow: "-4px 0 20px rgba(0,0,0,0.15)" },
+  header: { display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 16 },
+  eyebrow: { fontFamily: "IBM Plex Mono, monospace", fontSize: 11, letterSpacing: "0.12em", color: C.teal, fontWeight: 600 },
+  title: { fontFamily: "Space Grotesk, sans-serif", fontSize: 22, fontWeight: 700, margin: "4px 0 0" },
+  closeBtn: { border: "none", background: "transparent", fontSize: 18, cursor: "pointer", color: C.slate, padding: 4 },
+  search: { border: `1px solid ${C.line}`, borderRadius: 6, padding: "9px 12px", fontSize: 13, width: "100%", boxSizing: "border-box", outline: "none", marginBottom: 10 },
+  count: { fontSize: 12, color: C.slate, fontFamily: "IBM Plex Mono, monospace", marginBottom: 10 },
+  listWrap: { overflowY: "auto", flex: 1 },
+  table: { width: "100%", borderCollapse: "collapse", fontSize: 13 },
+  th: { fontFamily: "IBM Plex Mono, monospace", fontSize: 10.5, textTransform: "uppercase", letterSpacing: "0.04em", padding: "6px 8px", borderBottom: `2px solid ${C.ink}`, position: "sticky", top: 0, background: "#fff" },
+  trOdd: { background: "#F5F7F2" },
+  tdCode: { fontFamily: "IBM Plex Mono, monospace", fontSize: 11.5, padding: "6px 8px", color: C.teal, fontWeight: 600, whiteSpace: "nowrap" },
+  tdName: { padding: "6px 8px", color: C.ink },
+  tdNum: { fontFamily: "IBM Plex Mono, monospace", fontSize: 11.5, padding: "6px 8px", textAlign: "right", color: C.slate },
+};
 
 const styles: Record<string, React.CSSProperties> = {
   page: { fontFamily: "Inter, sans-serif", background: C.bg, color: C.ink, padding: "28px 32px 40px", minHeight: "100vh", boxSizing: "border-box" },

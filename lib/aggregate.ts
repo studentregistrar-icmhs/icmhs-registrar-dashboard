@@ -1,6 +1,14 @@
 import { RawFlags } from "./parse";
 import { reconcile, STATUS_LABEL, ReconcilableStudent } from "./reconcile";
 
+export type StudentSummary = {
+  admissionNo: string;
+  name: string;
+  courseCode: string;
+  courseName: string;
+  campus: "MAIN" | "NAKURU";
+};
+
 export type DashboardData = {
   generatedAt: string;
   totals: { main: number; nakuru: number; all: number };
@@ -22,6 +30,9 @@ export type DashboardData = {
     total: number;
     statusCounts: Record<string, number>;
   }[];
+  /** Every student, grouped by their canonical status label. Powers the
+   * "click a status to see who's in it" drill-down in the UI. */
+  studentsByStatus: Record<string, StudentSummary[]>;
   conflictCount: number;
 };
 
@@ -94,6 +105,22 @@ export function buildDashboardData(students: ReconcilableStudent[]): DashboardDa
 
   const conflictCount = students.filter((s) => reconcile(s.flags).hasConflict).length;
 
+  const studentsByStatus: Record<string, StudentSummary[]> = {};
+  for (const key of [...STATUS_KEYS.map((k) => STATUS_LABEL[k]), "Unmarked"]) {
+    studentsByStatus[key] = [];
+  }
+  for (const s of students) {
+    const r = reconcile(s.flags);
+    const label = r.canonicalStatus === "UNMARKED" ? "Unmarked" : STATUS_LABEL[r.canonicalStatus];
+    studentsByStatus[label].push({
+      admissionNo: s.admissionNo,
+      name: s.name,
+      courseCode: s.courseCode,
+      courseName: s.courseName,
+      campus: s.campus,
+    });
+  }
+
   return {
     generatedAt: new Date().toISOString(),
     totals: { main: main.length, nakuru: nakuru.length, all: students.length },
@@ -108,6 +135,7 @@ export function buildDashboardData(students: ReconcilableStudent[]): DashboardDa
       nakuru: genderTally(nakuru),
     },
     programs,
+    studentsByStatus,
     conflictCount,
   };
 }
