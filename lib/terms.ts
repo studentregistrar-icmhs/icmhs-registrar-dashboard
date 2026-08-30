@@ -44,6 +44,15 @@ export function getTerm(slug: string): TermConfig | undefined {
   return TERMS.find((t) => t.slug === slug);
 }
 
+/** The term immediately before this one in TERMS (chronological order),
+ * or undefined if this is the first term on record. Powers the
+ * term-over-term trend card on the dashboard. */
+export function getPreviousTerm(slug: string): TermConfig | undefined {
+  const i = TERMS.findIndex((t) => t.slug === slug);
+  if (i <= 0) return undefined;
+  return TERMS[i - 1];
+}
+
 export function getDefaultTerm(): TermConfig {
   return TERMS.find((t) => t.isDefault) ?? TERMS[0];
 }

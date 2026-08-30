@@ -47,9 +47,15 @@ type Props = {
   termLabel: string;
   isLive: boolean;
   apiTermSlug: string;
+  previousTermLabel?: string;
+  previousData?: DashboardData | null;
 };
 
-export default function Dashboard({ initialData, initialConflicts, termLabel, isLive, apiTermSlug }: Props) {
+const AUTO_REFRESH_MS = 3 * 60 * 1000;
+
+export default function Dashboard({
+  initialData, initialConflicts, termLabel, isLive, apiTermSlug, previousTermLabel, previousData,
+}: Props) {
   const [data, setData] = useState(initialData);
   const [conflicts, setConflicts] = useState(initialConflicts);
   const [campus, setCampus] = useState<"all" | "main" | "nakuru">("all");
@@ -190,6 +196,16 @@ export default function Dashboard({ initialData, initialConflicts, termLabel, is
     }
   }
 
+  const [autoRefresh, setAutoRefresh] = useState(true);
+  useEffect(() => {
+    if (!isLive || !autoRefresh) return;
+    const id = setInterval(() => {
+      if (document.visibilityState === "visible") handleRefresh();
+    }, AUTO_REFRESH_MS);
+    return () => clearInterval(id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isLive, autoRefresh, apiTermSlug]);
+
   const maxLedger = Math.max(...STATUS_ORDER.map((s) => kpis[s.label] || 0), 1);
 
   const studentPanelList = useMemo(() => {
@@ -249,9 +265,18 @@ export default function Dashboard({ initialData, initialConflicts, termLabel, is
             ))}
           </div>
           {isLive && (
-            <button onClick={handleRefresh} disabled={refreshing} style={styles.refreshBtn}>
-              {refreshing ? "Refreshing…" : "Refresh now"}
-            </button>
+            <>
+              <button
+                onClick={() => setAutoRefresh((v) => !v)}
+                style={{ ...styles.toggleBtn, ...styles.autoBtn, ...(autoRefresh ? styles.autoBtnOn : {}) }}
+                title={autoRefresh ? "Auto-refreshes every 3 minutes — click to pause" : "Auto-refresh paused — click to resume"}
+              >
+                {autoRefresh ? "● Auto-refresh on" : "○ Auto-refresh off"}
+              </button>
+              <button onClick={handleRefresh} disabled={refreshing} style={styles.refreshBtn}>
+                {refreshing ? "Refreshing…" : "Refresh now"}
+              </button>
+            </>
           )}
         </div>
       </header>
@@ -323,6 +348,31 @@ export default function Dashboard({ initialData, initialConflicts, termLabel, is
               set this pull — see the Data Quality tab.
             </div>
           </section>
+
+          {previousData && previousData.totals.all > 0 && (
+            <section style={styles.card}>
+              <div style={styles.cardHead}>
+                <h2 style={styles.h2}>Term Trend</h2>
+                <span style={styles.cardNote}>{previousTermLabel} → {termLabel}</span>
+              </div>
+              <div style={styles.trendGrid}>
+                <TrendStat label="Total Roll" current={total} previous={previousData.totals[campus === "all" ? "all" : campus]} />
+                {STATUS_ORDER.filter((s) => s.label !== "Unmarked").map((s) => (
+                  <TrendStat
+                    key={s.label}
+                    label={s.label}
+                    current={kpis[s.label] ?? 0}
+                    previous={previousData.statusCounts[campus]?.[s.label] ?? 0}
+                  />
+                ))}
+              </div>
+              <div style={styles.ledgerFoot}>
+                Compares this term's canonical status counts against {previousTermLabel}'s. The
+                previous term's figures are loaded once per page visit and won't move when you hit
+                "Refresh now" — only {termLabel}'s numbers are live.
+              </div>
+            </section>
+          )}
 
           <section style={{ ...styles.card, maxWidth: 460 }}>
             <div style={styles.cardHead}><h2 style={styles.h2}>Gender Split</h2></div>
@@ -532,6 +582,25 @@ export default function Dashboard({ initialData, initialConflicts, termLabel, is
   );
 }
 
+function TrendStat({ label, current, previous }: { label: string; current: number; previous: number }) {
+  const delta = current - previous;
+  const pct = previous ? (delta / previous) * 100 : null;
+  const color = delta > 0 ? C.teal : delta < 0 ? C.rose : C.grey;
+  const arrow = delta > 0 ? "▲" : delta < 0 ? "▼" : "–";
+  return (
+    <div style={styles.trendCard}>
+      <div style={styles.kpiLabel}>{label}</div>
+      <div style={{ display: "flex", alignItems: "baseline", gap: 8, flexWrap: "wrap" }}>
+        <div style={{ ...styles.kpiValue, fontSize: 22 }}>{fmt(current)}</div>
+        <div style={{ fontSize: 12, color, fontFamily: "IBM Plex Mono, monospace", fontWeight: 600 }}>
+          {arrow} {fmt(Math.abs(delta))}
+          {pct !== null ? ` (${pct > 0 ? "+" : ""}${pct.toFixed(1)}%)` : ""}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function KpiCard({ label, value, accent, big, onClick }: { label: string; value: number; accent: string; big?: boolean; onClick?: () => void }) {
   return (
     <div
@@ -706,6 +775,8 @@ const styles: Record<string, React.CSSProperties> = {
   toggleBtn: { border: "none", background: "transparent", padding: "8px 14px", fontSize: 13, fontWeight: 500, color: C.slate, borderRadius: 6, cursor: "pointer" },
   toggleBtnActive: { background: C.ink, color: "#fff" },
   refreshBtn: { border: `1px solid ${C.ink}`, background: C.ink, color: "#fff", padding: "9px 16px", borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: "pointer" },
+  autoBtn: { border: `1px solid ${C.line}`, background: "#fff", color: C.slate, borderRadius: 8, padding: "9px 14px" },
+  autoBtnOn: { color: C.teal, borderColor: C.teal },
   tabRow: { display: "flex", gap: 6, marginBottom: 18 },
   tabBtn: { border: "none", background: "transparent", padding: "8px 4px", fontSize: 14, fontWeight: 600, color: C.slate, cursor: "pointer", borderBottom: "3px solid transparent" },
   tabBtnActive: { color: C.ink, borderBottom: `3px solid ${C.teal}` },
@@ -733,6 +804,8 @@ const styles: Record<string, React.CSSProperties> = {
   ledgerVal: { fontSize: 13, fontWeight: 600, color: C.ink, minWidth: 46, textAlign: "right" },
   ledgerPct: { fontSize: 12, color: C.slate, minWidth: 46, textAlign: "right" },
   ledgerFoot: { marginTop: 14, fontSize: 11.5, color: C.slate, borderTop: `1px dashed ${C.line}`, paddingTop: 10, lineHeight: 1.5 },
+  trendGrid: { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 12 },
+  trendCard: { background: C.bg, border: `1px solid ${C.line}`, borderRadius: 8, padding: "12px 14px" },
   search: { border: `1px solid ${C.line}`, borderRadius: 6, padding: "7px 12px", fontSize: 13, width: 220, outline: "none" },
   table: { width: "100%", borderCollapse: "collapse", fontSize: 13 },
   th: { fontFamily: "IBM Plex Mono, monospace", fontSize: 11, textTransform: "uppercase", letterSpacing: "0.04em", padding: "8px 10px", borderBottom: `2px solid ${C.ink}`, whiteSpace: "nowrap" },

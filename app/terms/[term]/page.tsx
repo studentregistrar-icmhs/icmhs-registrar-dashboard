@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import Dashboard from "@/components/Dashboard";
-import { getTerm, TERMS } from "@/lib/terms";
+import { getTerm, getPreviousTerm, TERMS } from "@/lib/terms";
 import { loadTermData } from "@/lib/loadTermData";
 
 export const revalidate = Number(process.env.REVALIDATE_SECONDS ?? 120);
@@ -14,7 +14,11 @@ export default async function TermPage({ params }: { params: { term: string } })
   const term = getTerm(params.term);
   if (!term) notFound();
 
-  const data = await loadTermData(params.term);
+  const previousTerm = getPreviousTerm(params.term);
+  const [data, previousData] = await Promise.all([
+    loadTermData(params.term),
+    previousTerm ? loadTermData(previousTerm.slug) : Promise.resolve(null),
+  ]);
   if (!data) notFound();
 
   if (data.error) {
@@ -39,6 +43,8 @@ export default async function TermPage({ params }: { params: { term: string } })
       termLabel={term.label}
       isLive={data.isLive}
       apiTermSlug={params.term}
+      previousTermLabel={previousTerm?.label}
+      previousData={previousData && !previousData.error ? previousData.dashboard : null}
     />
   );
 }
