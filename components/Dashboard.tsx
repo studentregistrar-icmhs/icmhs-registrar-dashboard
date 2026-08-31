@@ -27,6 +27,7 @@ const STATUS_ORDER = [
   { label: "Deferred", color: C.amber },
   { label: "Clinicals", color: "#8B6BAF" },
   { label: "Not Yet Reported", color: C.grey },
+  { label: "Short Course", color: "#D9B26F" },
   { label: "Unmarked", color: "#C9CFC5" },
 ];
 
@@ -689,9 +690,10 @@ export default function Dashboard({
           </div>
           <div style={{ fontSize: 13, color: C.slate, lineHeight: 1.6, maxWidth: 480 }}>
             <strong style={{ color: C.ink }}>{fmt(cleanCount)}</strong> of <strong style={{ color: C.ink }}>{fmt(total)}</strong> students
-            {campus !== "all" ? ` at this campus` : ""} have exactly one status flag set.{" "}
+            {campus !== "all" ? ` at this campus` : ""} are clean — a single status flag set, or a short course
+            that was never expected to have one.{" "}
             <strong style={{ color: C.rose }}>{fmt(conflicts.length)}</strong> have conflicting flags and{" "}
-            <strong style={{ color: C.grey }}>{fmt(unmarked.length)}</strong> have none set at all — both need a look at the source sheet.
+            <strong style={{ color: C.grey }}>{fmt(unmarked.length)}</strong> have none set with no short-course excuse — both need a look at the source sheet.
           </div>
         </section>
 

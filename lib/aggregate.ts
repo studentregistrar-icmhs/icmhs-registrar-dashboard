@@ -49,20 +49,36 @@ export type DashboardData = {
 };
 
 const STATUS_KEYS = Object.keys(STATUS_LABEL) as (keyof RawFlags)[];
+const SHORT_COURSE_DEPARTMENT = "Other";
 
 function emptyStatusCounts(): Record<string, number> {
   const o: Record<string, number> = {};
   for (const k of STATUS_KEYS) o[STATUS_LABEL[k]] = 0;
   o["Unmarked"] = 0;
+  o["Short Course"] = 0;
   return o;
+}
+
+/**
+ * A student's canonical status label, with one adjustment: an unmarked
+ * student in the "Other" department (short courses — a few days to a
+ * month, e.g. Phlebotomy) gets "Short Course" instead of "Unmarked".
+ * These students were never going to have a semester-length status flag
+ * set, so lumping them into "Unmarked" hid genuine data-entry gaps on
+ * regular diploma/certificate students behind noise. Nothing else about
+ * how they're counted changes — they still appear in every total, KPI,
+ * and export, just under an honest label instead of a misleading one.
+ */
+function statusLabelFor(s: ReconcilableStudent): string {
+  const r = reconcile(s.flags);
+  if (r.canonicalStatus !== "UNMARKED") return STATUS_LABEL[r.canonicalStatus];
+  return getDepartment(s.courseCode) === SHORT_COURSE_DEPARTMENT ? "Short Course" : "Unmarked";
 }
 
 function tallyFlags(students: ReconcilableStudent[]) {
   const counts = emptyStatusCounts();
   for (const s of students) {
-    const r = reconcile(s.flags);
-    const label = r.canonicalStatus === "UNMARKED" ? "Unmarked" : STATUS_LABEL[r.canonicalStatus];
-    counts[label] += 1;
+    counts[statusLabelFor(s)] += 1;
   }
   return counts;
 }
@@ -99,9 +115,7 @@ export function buildDashboardData(students: ReconcilableStudent[]): DashboardDa
     const p = programMap.get(key)!;
     if (s.campus === "MAIN") p.totalMain += 1;
     else p.totalNakuru += 1;
-    const r = reconcile(s.flags);
-    const label = r.canonicalStatus === "UNMARKED" ? "Unmarked" : STATUS_LABEL[r.canonicalStatus];
-    p.statusCounts[label] += 1;
+    p.statusCounts[statusLabelFor(s)] += 1;
   }
 
   const programs = Array.from(programMap.entries())
@@ -128,9 +142,7 @@ export function buildDashboardData(students: ReconcilableStudent[]): DashboardDa
     if (s.campus === "MAIN") d.totalMain += 1;
     else d.totalNakuru += 1;
     if (s.courseCode) d.courseCodes.add(s.courseCode);
-    const r = reconcile(s.flags);
-    const label = r.canonicalStatus === "UNMARKED" ? "Unmarked" : STATUS_LABEL[r.canonicalStatus];
-    d.statusCounts[label] += 1;
+    d.statusCounts[statusLabelFor(s)] += 1;
   }
   const departments = Array.from(departmentMap.entries())
     .map(([name, d]) => ({
@@ -146,12 +158,11 @@ export function buildDashboardData(students: ReconcilableStudent[]): DashboardDa
   const conflictCount = students.filter((s) => reconcile(s.flags).hasConflict).length;
 
   const studentsByStatus: Record<string, StudentSummary[]> = {};
-  for (const key of [...STATUS_KEYS.map((k) => STATUS_LABEL[k]), "Unmarked"]) {
+  for (const key of [...STATUS_KEYS.map((k) => STATUS_LABEL[k]), "Unmarked", "Short Course"]) {
     studentsByStatus[key] = [];
   }
   for (const s of students) {
-    const r = reconcile(s.flags);
-    const label = r.canonicalStatus === "UNMARKED" ? "Unmarked" : STATUS_LABEL[r.canonicalStatus];
+    const label = statusLabelFor(s);
     studentsByStatus[label].push({
       admissionNo: s.admissionNo,
       name: s.name,
