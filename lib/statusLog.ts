@@ -1,5 +1,5 @@
 import { RawFlags } from "./parse";
-import { ReconcilableStudent, LABEL_TO_FLAG } from "./reconcile";
+import { ReconcilableStudent, LABEL_TO_FLAG, reconcile, TERMINAL_STATUSES } from "./reconcile";
 
 /**
  * Expected shape of the new "STATUS LOG" tab, one row per status entry:
@@ -23,7 +23,33 @@ function flagsFromLabel(label: string): RawFlags {
   return { ...EMPTY_FLAGS, [key]: true };
 }
 
-type Roster = { admissionNo: string; name: string; courseCode: string; courseName: string; gender: string; contacts: string; intakeYear: string; campus: "MAIN" | "NAKURU" }[];
+/**
+ * Graduated/Dropped are final everywhere else in this app (the terminal
+ * lock in lib/writeStatus.ts refuses to change them without an explicit
+ * override). This carries that same finality into the Status Log terms:
+ * if a student already graduated or dropped in an earlier legacy term
+ * (May-Aug checked before Jan-Apr, since it's the more recent of the two),
+ * that status wins for this term too — even overriding a conflicting log
+ * row, since a terminal status shouldn't have been logged over in the
+ * first place (manual sheet edits bypass the app's terminal-lock check).
+ * Returns null if neither legacy term has a terminal status, so the
+ * caller falls back to whatever the log says.
+ */
+function inheritedTerminalFlags(mayAug: RawFlags, janApr: RawFlags): RawFlags | null {
+  for (const flags of [mayAug, janApr]) {
+    const r = reconcile(flags);
+    if (r.canonicalStatus !== "UNMARKED" && TERMINAL_STATUSES.includes(r.canonicalStatus)) {
+      return { ...EMPTY_FLAGS, [r.canonicalStatus]: true };
+    }
+  }
+  return null;
+}
+
+type Roster = {
+  admissionNo: string; name: string; courseCode: string; courseName: string;
+  gender: string; contacts: string; intakeYear: string; campus: "MAIN" | "NAKURU";
+  flagsJanApr: RawFlags; flagsMayAug: RawFlags;
+}[];
 
 /**
  * Builds ReconcilableStudent[] for a Status-Log-based term by joining the
@@ -54,6 +80,8 @@ export function buildFromStatusLog(
     contacts: r.contacts,
     intakeYear: r.intakeYear,
     campus: r.campus,
-    flags: flagsFromLabel(latestStatusByAdmission.get(r.admissionNo) ?? ""),
+    flags:
+      inheritedTerminalFlags(r.flagsMayAug, r.flagsJanApr) ??
+      flagsFromLabel(latestStatusByAdmission.get(r.admissionNo) ?? ""),
   }));
 }

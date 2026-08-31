@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import Link from "next/link";
+import { useRouter } from "next/navigation";
 import type { StudentProfile as Profile, TimelineEntry } from "@/lib/studentTimeline";
 
 const STATUS_OPTIONS = [
@@ -15,6 +15,7 @@ const C = {
 };
 
 export default function StudentProfile({ initialProfile }: { initialProfile: Profile }) {
+  const router = useRouter();
   const [profile, setProfile] = useState(initialProfile);
   const [pendingTerm, setPendingTerm] = useState<string | null>(null);
   const [pendingStatus, setPendingStatus] = useState<string>("");
@@ -51,7 +52,15 @@ export default function StudentProfile({ initialProfile }: { initialProfile: Pro
 
   return (
     <div style={styles.page}>
-      <Link href="/students" style={styles.backLink}>← Search</Link>
+      <button
+        onClick={() => {
+          if (typeof window !== "undefined" && window.history.length > 1) router.back();
+          else router.push("/students");
+        }}
+        style={styles.backLink}
+      >
+        ← Back
+      </button>
       <div style={styles.eyebrow}>{profile.admissionNo}</div>
       <h1 style={styles.h1}>{profile.name}</h1>
       <div style={styles.sub}>{profile.courseName || profile.courseCode} · {profile.campus}{profile.gender ? ` · ${profile.gender}` : ""}</div>
@@ -154,7 +163,7 @@ function TimelineRow({
 
 const styles: Record<string, React.CSSProperties> = {
   page: { fontFamily: "Inter, sans-serif", background: C.bg, color: C.ink, padding: "40px 32px", minHeight: "100vh", boxSizing: "border-box", maxWidth: 640 },
-  backLink: { fontFamily: "IBM Plex Mono, monospace", fontSize: 12, color: C.slate, textDecoration: "none", display: "inline-block", marginBottom: 20 },
+  backLink: { fontFamily: "IBM Plex Mono, monospace", fontSize: 12, color: C.slate, textDecoration: "none", display: "inline-block", marginBottom: 20, background: "none", border: "none", padding: 0, cursor: "pointer" },
   eyebrow: { fontFamily: "IBM Plex Mono, monospace", fontSize: 12, color: C.teal, fontWeight: 600 },
   h1: { fontFamily: "Space Grotesk, sans-serif", fontWeight: 700, fontSize: 28, margin: "4px 0 0" },
   sub: { fontSize: 13, color: C.slate, marginBottom: 6 },

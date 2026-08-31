@@ -1,7 +1,7 @@
 import { fetchSheetRows } from "./googleSheets";
 import { findStudentRow } from "./rosterLookup";
 import { readFlagsAt, LAYOUT_FOR_WRITE } from "./parse";
-import { reconcile, STATUS_LABEL } from "./reconcile";
+import { reconcile, STATUS_LABEL, TERMINAL_STATUSES } from "./reconcile";
 import { TERMS } from "./terms";
 
 export type TimelineEntry = {
@@ -33,27 +33,38 @@ export async function getStudentTimeline(admissionNo: string): Promise<StudentPr
   const courseNameCol = layout.courseName;
 
   const timeline: TimelineEntry[] = [];
+  // Most recent legacy terminal status found, checked in TERMS order so a
+  // later term's Graduated/Dropped overrides an earlier one if somehow both
+  // are set — carries forward into Status Log terms below, same as
+  // buildFromStatusLog() does for the main dashboard.
+  let inheritedTerminal: string | null = null;
 
   for (const term of TERMS) {
     if (term.source.kind === "live-legacy") {
       const flags = readFlagsAt(loc.rawRow, loc.campus, term.source.block);
       const r = reconcile(flags);
-      timeline.push({
-        termSlug: term.slug,
-        termLabel: term.label,
-        status: r.canonicalStatus === "UNMARKED" ? "Unmarked" : STATUS_LABEL[r.canonicalStatus],
-        editable: true,
-      });
+      const status = r.canonicalStatus === "UNMARKED" ? "Unmarked" : STATUS_LABEL[r.canonicalStatus];
+      timeline.push({ termSlug: term.slug, termLabel: term.label, status, editable: true });
+      if (r.canonicalStatus !== "UNMARKED" && TERMINAL_STATUSES.includes(r.canonicalStatus)) {
+        inheritedTerminal = status;
+      }
     }
   }
 
   const statusLogTerm = TERMS.find((t) => t.source.kind === "live-statuslog");
   if (statusLogTerm) {
-    const logRows = await fetchSheetRows("STATUS LOG!A:D").catch(() => []);
     let latestStatus: string | null = null;
-    for (let i = 1; i < logRows.length; i++) {
-      const [rowAdmission, term, status] = logRows[i] ?? [];
-      if (String(rowAdmission) === admissionNo) latestStatus = String(status ?? "");
+    if (inheritedTerminal) {
+      // Terminal is final everywhere else in this app — it carries forward
+      // even over a conflicting log row, since a terminal status shouldn't
+      // have been logged over in the first place.
+      latestStatus = inheritedTerminal;
+    } else {
+      const logRows = await fetchSheetRows("STATUS LOG!A:D").catch(() => []);
+      for (let i = 1; i < logRows.length; i++) {
+        const [rowAdmission, term, status] = logRows[i] ?? [];
+        if (String(rowAdmission) === admissionNo) latestStatus = String(status ?? "");
+      }
     }
     if (latestStatus !== null) {
       timeline.push({
