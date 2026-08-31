@@ -33,11 +33,9 @@ const isBlank = (v: unknown) => {
 // Column layout confirmed against the MAIN CAMPUS / NAKURU CAMPUS tabs used
 // by the deferment app (admission no. = col B, name = C, programme name = E,
 // campus code = J, "Deferred - Approved" = col W on MAIN CAMPUS).
-// Column F on both tabs is Contacts/Phone Number. Column G (Intake/Year) only
-// exists on MAIN CAMPUS today — Nakuru doesn't have it yet, so `intake` is
-// left unset there. Once Nakuru's sheet gets an Intake/Year column, add
-// `intake` to NAKURU below (and shift `gender`/`janApr`/`mayAug` by 1 if the
-// new column is inserted before them rather than appended).
+// Column F is Contacts/Phone Number on both tabs. Column G is Intake/Year on
+// both tabs (added to NAKURU after MAIN — everything from Gender onward on
+// NAKURU shifted one column right when that was inserted).
 const LAYOUT = {
   MAIN: {
     admissionNo: 1,
@@ -56,10 +54,10 @@ const LAYOUT = {
     courseCode: 3,
     courseName: 4,
     contacts: 5,
-    intake: undefined as number | undefined,
-    gender: 6,
-    janApr: 8,
-    mayAug: 16,
+    intake: 6,
+    gender: 7,
+    janApr: 9, // 8 consecutive columns starting here
+    mayAug: 17,
   },
 } as const;
 
