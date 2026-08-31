@@ -77,3 +77,15 @@ export async function appendRow(tabName: string, values: any[]): Promise<void> {
     requestBody: { values: [values] },
   });
 }
+
+/** Appends several rows to the end of a tab in a single API call. */
+export async function appendRows(tabName: string, rows: any[][]): Promise<void> {
+  if (rows.length === 0) return;
+  await getSheetsClient().spreadsheets.values.append({
+    spreadsheetId: getSheetId(),
+    range: `${tabName}!A1`,
+    valueInputOption: "RAW",
+    insertDataOption: "INSERT_ROWS",
+    requestBody: { values: rows },
+  });
+}

@@ -61,8 +61,11 @@ term-over-term trend comparison, and a password gate.
   - `updateStudentStatus()` — sets a student's status for a term; checks
     every live term for an existing terminal status first, refuses unless
     `override: true`.
-  - `resolveLegacyConflict()` — clears redundant flag columns, keeping only
-    the canonical one.
+  - `resolveLegacyConflict()` / `resolveLegacyConflictsBulk()` — clear
+    redundant flag columns, keeping only the canonical one. Each logs a row
+    to `RESOLVE LOG` (who, when, what it was before, what it became) before
+    reporting success — see "Resolve log & password" below.
+- **`lib/resolveAuth.ts`** — the second password gate, specific to resolving.
 - **`lib/studentTimeline.ts`** — read-only cross-term lookup for a student.
 - **`lib/csv.ts`** — dependency-free CSV builder + browser download trigger.
 - **`middleware.ts`** — the password gate.
@@ -96,10 +99,52 @@ every route with HTTP Basic Auth and **fails closed** — if the password
 isn't set, the dashboard returns an error instead of serving content
 unauthenticated.
 
-This is intentionally simple (no accounts, no audit trail of *who* made a
-given change) — fine for a small internal team sharing one password. If
-per-user accountability ever matters (e.g. "who marked this student
-Dropped"), that's a bigger addition.
+This is intentionally simple (no accounts, no per-page permissions) — fine
+for a small internal team sharing one password for *viewing* the
+dashboard. Resolving conflicts is a separate, higher-risk action and has
+its own gate — see below.
+
+## Resolve log & password
+
+Clicking "Resolve" or "Resolve all" overwrites status columns directly in
+the live sheet, so it gets its own protections, independent of the
+dashboard password:
+
+- **A second password.** Set `RESOLVE_PASSWORD` in Environment Variables —
+  it must differ from `DASHBOARD_PASSWORD` in practice (nothing enforces
+  that technically, but there's no point otherwise). `lib/resolveAuth.ts`
+  checks it server-side on every resolve request and fails closed the same
+  way the dashboard password does. Anyone with the dashboard password can
+  browse and export; only someone who also has this one can resolve.
+- **A name field.** The confirm dialog also asks for the resolver's name.
+  This is self-attested, not real authentication — anyone can type any
+  name — but paired with the log below it gives you something to go on
+  when a mistake happens, which is more than nothing.
+- **A `RESOLVE LOG` tab**, append-only like `STATUS LOG`. Every resolve —
+  single or bulk — appends one row per student *before* reporting success
+  to the browser, but only *after* the sheet write itself succeeds, so the
+  log never claims a change happened that didn't. Columns: `Timestamp |
+  Admission No. | Term | Previous Flags Set | Resolved To | Resolved By`.
+  Create this tab the same way as `STATUS LOG` (see below) — until it
+  exists, resolving will fail with a sheet error rather than silently
+  skipping the log.
+- **This is how you recover from a mistaken resolve.** There's no "undo"
+  button — a resolve is a direct overwrite. But `RESOLVE LOG`'s "Previous
+  Flags Set" column tells you exactly which columns to re-mark in the
+  sheet to put a student back. For anything resolved *before* this log
+  existed, your only option is Google Sheets' own Version History (File →
+  Version history → See version history) — find the revision just before
+  the incident and manually copy back the affected rows' values rather
+  than restoring the whole version wholesale, which would also undo any
+  legitimate edits made since.
+
+## Setting up the RESOLVE LOG tab
+
+1. Add a tab named exactly `RESOLVE LOG` with header row: `Timestamp |
+   Admission No. | Term | Previous Flags Set | Resolved To | Resolved By`.
+2. That's it — no data validation needed, this tab is machine-written only.
+3. Set `RESOLVE_PASSWORD` in Vercel's Environment Variables if you haven't
+   already (see `.env.example`). Resolving fails closed until it's set.
 
 ## Setting up Sept–Dec 2026 (the Status Log)
 
@@ -107,9 +152,16 @@ Dropped"), that's a bigger addition.
    `Admission No. | Term | Status | Date Updated`.
 2. Add Data Validation on the Status column (Reject input) restricted to:
    ```
-   Graduated, In Session, Attachment, Clinicals, Deferred, Dropped, Completed, Not Yet Reported
+   Graduated, In Session, Attachment, Clinicals, Deferred, Dropped, Completed, Not Yet Reported,
+   Semester Deferment - Approved, Attachment Deferment - Approved, Maternity Deferment - Approved
    ```
-   (Not "NYR" — must match `STATUS_LABEL` in `lib/reconcile.ts` exactly.)
+   The first 8 must match `STATUS_LABEL` in `lib/reconcile.ts` exactly (not
+   "NYR" — "Not Yet Reported" spelled out). The last 3 are the Deferment
+   App's specific deferral-reason labels — all three are recognized as
+   "Deferred" for counting purposes (see `LABEL_TO_FLAG` in
+   `lib/reconcile.ts`) while the exact reason still shows on the student's
+   own profile page. If the Deferment App ever adds a new deferral type,
+   add it to both this dropdown list and that mapping.
 3. Staff append one row per status change, `Term` set to `SEPT-DEC 2026`
    (must match `termLabel` in `lib/terms.ts`). Never edit old rows.
 4. `/terms/sept-dec-2026` picks this up automatically once the tab exists
@@ -132,7 +184,8 @@ npm run dev                  # http://localhost:3000
 ```
 
 Required env vars: `GOOGLE_SERVICE_ACCOUNT_EMAIL`, `GOOGLE_PRIVATE_KEY`,
-`GOOGLE_SHEET_ID`, `DASHBOARD_PASSWORD`. Optional: `REVALIDATE_SECONDS`
+`GOOGLE_SHEET_ID`, `DASHBOARD_PASSWORD`, `RESOLVE_PASSWORD`. Optional:
+`REVALIDATE_SECONDS`
 (default 120), `DASHBOARD_USER` (default `registrar`).
 
 ## Deploying to Vercel

@@ -1,4 +1,4 @@
-import { fetchSheetRows, updateRange, appendRow, batchUpdateRanges } from "./googleSheets";
+import { fetchSheetRows, updateRange, appendRow, appendRows, batchUpdateRanges } from "./googleSheets";
 import { findStudentRow } from "./rosterLookup";
 import { getTerm, TERMS } from "./terms";
 import { reconcile, STATUS_LABEL, LABEL_TO_FLAG, TERMINAL_STATUSES } from "./reconcile";
@@ -87,8 +87,10 @@ export async function updateStudentStatus(opts: {
   return { ok: false, reason: "unsupported-term" }; // static historical terms are read-only
 }
 
-/** Clears every flag except the canonical one for a legacy term's conflict. Never touches Status Log terms (they can't conflict). */
-export async function resolveLegacyConflict(admissionNo: string, termSlug: string): Promise<WriteResult> {
+/** Clears every flag except the canonical one for a legacy term's conflict. Never touches Status Log terms (they can't conflict).
+ * Logs a RESOLVE LOG row first, capturing exactly what was set before the write — this is what makes a mistaken
+ * resolve recoverable: the log has enough to manually restore the previous flags in the sheet if needed. */
+export async function resolveLegacyConflict(admissionNo: string, termSlug: string, resolvedBy: string): Promise<WriteResult> {
   const term = getTerm(termSlug);
   if (!term || term.source.kind !== "live-legacy") return { ok: false, reason: "unsupported-term" };
 
@@ -99,24 +101,42 @@ export async function resolveLegacyConflict(admissionNo: string, termSlug: strin
   const r = reconcile(flags);
   if (r.canonicalStatus === "UNMARKED") return { ok: false, reason: "invalid-status" };
 
-  return updateStudentStatus({
+  const previousFlags = r.setFlags.map((f) => STATUS_LABEL[f]).join("; ");
+  const resolvedTo = STATUS_LABEL[r.canonicalStatus];
+
+  const writeResult = await updateStudentStatus({
     admissionNo,
     termSlug,
-    newStatusLabel: STATUS_LABEL[r.canonicalStatus],
+    newStatusLabel: resolvedTo,
     override: true, // resolving a conflict never counts as "changing away from" a terminal status
   });
+
+  if (writeResult.ok) {
+    await appendRow("RESOLVE LOG", [
+      new Date().toISOString(),
+      admissionNo,
+      term.label,
+      previousFlags,
+      resolvedTo,
+      resolvedBy,
+    ]);
+  }
+
+  return writeResult;
 }
 
 /**
  * Same as resolveLegacyConflict, but for many students at once. Fetches each
  * campus tab ONCE (instead of once per student) and writes every resolved
- * row in a single Sheets API call via batchUpdateRanges. Like the single
- * version, this never triggers the terminal lock — resolving a conflict is
- * never treated as "changing away from" a terminal status.
+ * row in a single Sheets API call via batchUpdateRanges — plus one RESOLVE
+ * LOG append covering the whole batch. Like the single version, this never
+ * triggers the terminal lock — resolving a conflict is never treated as
+ * "changing away from" a terminal status.
  */
 export async function resolveLegacyConflictsBulk(
   admissionNos: string[],
-  termSlug: string
+  termSlug: string,
+  resolvedBy: string
 ): Promise<{ admissionNo: string; result: WriteResult }[]> {
   const term = getTerm(termSlug);
   if (!term || term.source.kind !== "live-legacy") {
@@ -140,6 +160,7 @@ export async function resolveLegacyConflictsBulk(
 
   const results: { admissionNo: string; result: WriteResult }[] = [];
   const updates: { range: string; values: any[] }[] = [];
+  const logRows: any[][] = [];
 
   for (const admissionNo of admissionNos) {
     const loc = byAdmission.get(admissionNo);
@@ -163,11 +184,23 @@ export async function resolveLegacyConflictsBulk(
     );
     const range = `${loc.campus === "MAIN" ? "MAIN CAMPUS" : "NAKURU CAMPUS"}!${colLetter(startCol)}${loc.sheetRowNumber}:${colLetter(startCol + 7)}${loc.sheetRowNumber}`;
     updates.push({ range, values });
+    logRows.push([
+      new Date().toISOString(),
+      admissionNo,
+      term.label,
+      r.setFlags.map((f) => STATUS_LABEL[f]).join("; "),
+      STATUS_LABEL[winningKey],
+      resolvedBy,
+    ]);
     results.push({ admissionNo, result: { ok: true } });
   }
 
   if (updates.length > 0) {
     await batchUpdateRanges(updates);
+  }
+
+  if (logRows.length > 0) {
+    await appendRows("RESOLVE LOG", logRows);
   }
 
   return results;

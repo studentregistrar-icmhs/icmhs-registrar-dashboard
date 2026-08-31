@@ -55,6 +55,24 @@ export const LABEL_TO_FLAG: Record<string, keyof RawFlags> = Object.fromEntries(
 ) as Record<string, keyof RawFlags>;
 
 /**
+ * The Deferment App writes a more specific reason than plain "Deferred" —
+ * e.g. "Attachment Deferment - Approved" rather than just "Deferred". On
+ * the legacy MAIN/NAKURU CAMPUS tabs this doesn't matter: readFlags() only
+ * checks whether the Deferred column is non-blank, any text counts. The
+ * Status Log is different — it matches on the exact status TEXT, so
+ * without this, any of these three strings would go unrecognized (silently
+ * counted as Unmarked instead of Deferred). Add any future deferment-type
+ * label the Deferment App introduces here — the raw text is still shown
+ * verbatim on the student's own profile page, this only affects how it's
+ * bucketed for counting.
+ */
+Object.assign(LABEL_TO_FLAG, {
+  "Semester Deferment - Approved": "deferred",
+  "Attachment Deferment - Approved": "deferred",
+  "Maternity Leave - Approved": "deferred",
+} satisfies Record<string, keyof RawFlags>);
+
+/**
  * Once a student is Graduated or Dropped, that's treated as final — no
  * further status change is allowed without an explicit override. Enforced
  * at write time (see lib/writeStatus.ts), not here; this list is the single
