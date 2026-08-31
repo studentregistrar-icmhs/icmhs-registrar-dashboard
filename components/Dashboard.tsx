@@ -78,6 +78,10 @@ export default function Dashboard({
   const [now, setNow] = useState(() => Date.now());
   const [resolvingId, setResolvingId] = useState<string | null>(null);
   const [bulkResolvingCategory, setBulkResolvingCategory] = useState<string | null>(null);
+  const [bulkConfirmCategory, setBulkConfirmCategory] = useState<string | null>(null);
+  const [bulkPasswordCategory, setBulkPasswordCategory] = useState<string | null>(null);
+  const [bulkPassword, setBulkPassword] = useState("");
+  const [bulkAuthError, setBulkAuthError] = useState<string | null>(null);
 
   useEffect(() => {
     const id = setInterval(() => setNow(Date.now()), 30_000);
@@ -300,16 +304,21 @@ export default function Dashboard({
     }
   }
 
-  async function handleBulkResolve(category: string) {
+  async function handleBulkResolve(category: string, password: string) {
     const admissionNos = conflicts.filter((c) => c.resolvedTo === category).map((c) => c.admissionNo);
     if (admissionNos.length === 0) return;
     setBulkResolvingCategory(category);
+    setBulkAuthError(null);
     try {
       const res = await fetch("/api/conflicts/resolve-bulk", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ admissionNos, termSlug: apiTermSlug }),
+        body: JSON.stringify({ admissionNos, termSlug: apiTermSlug, password }),
       });
+      if (res.status === 401) {
+        setBulkAuthError("Incorrect password — try again.");
+        return; // keep the password modal open
+      }
       const json = await res.json();
       const succeeded: string[] = json.succeeded ?? [];
       if (succeeded.length > 0) {
@@ -322,6 +331,8 @@ export default function Dashboard({
             json.failed.map((f: any) => `${f.admissionNo}: ${f.result.reason}`).join("\n")
         );
       }
+      setBulkPasswordCategory(null);
+      setBulkPassword("");
     } finally {
       setBulkResolvingCategory(null);
     }
@@ -713,7 +724,7 @@ export default function Dashboard({
                   key={category}
                   style={styles.bulkResolveBtn}
                   disabled={bulkResolvingCategory !== null}
-                  onClick={() => handleBulkResolve(category)}
+                  onClick={() => setBulkConfirmCategory(category)}
                 >
                   {bulkResolvingCategory === category ? "Resolving…" : `${category} (${count})`}
                 </button>
@@ -842,9 +853,98 @@ export default function Dashboard({
           }}
         />
       )}
+
+      {bulkConfirmCategory && (
+        <div style={confirmStyles.overlay} onClick={() => setBulkConfirmCategory(null)}>
+          <div style={confirmStyles.modal} onClick={(e) => e.stopPropagation()}>
+            <h3 style={confirmStyles.title}>Resolve all "{bulkConfirmCategory}" conflicts?</h3>
+            <p style={confirmStyles.body}>
+              This will clear the redundant flag columns for{" "}
+              <strong>
+                {fmt(conflicts.filter((c) => c.resolvedTo === bulkConfirmCategory).length)}
+              </strong>{" "}
+              student{conflicts.filter((c) => c.resolvedTo === bulkConfirmCategory).length === 1 ? "" : "s"}, keeping only{" "}
+              <strong>{bulkConfirmCategory}</strong> for each. This writes directly to the Google
+              Sheet and can't be undone automatically.
+            </p>
+            <div style={confirmStyles.btnRow}>
+              <button style={confirmStyles.cancelBtn} onClick={() => setBulkConfirmCategory(null)}>
+                Cancel
+              </button>
+              <button
+                style={confirmStyles.continueBtn}
+                onClick={() => {
+                  const category = bulkConfirmCategory;
+                  setBulkConfirmCategory(null);
+                  setBulkAuthError(null);
+                  setBulkPassword("");
+                  setBulkPasswordCategory(category);
+                }}
+              >
+                Yes, continue
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {bulkPasswordCategory && (
+        <div style={confirmStyles.overlay} onClick={() => { setBulkPasswordCategory(null); setBulkPassword(""); }}>
+          <form
+            style={confirmStyles.modal}
+            onClick={(e) => e.stopPropagation()}
+            onSubmit={(e) => {
+              e.preventDefault();
+              handleBulkResolve(bulkPasswordCategory, bulkPassword);
+            }}
+          >
+            <h3 style={confirmStyles.title}>Confirm with password</h3>
+            <p style={confirmStyles.body}>
+              Enter the dashboard password to resolve all "{bulkPasswordCategory}" conflicts.
+            </p>
+            <input
+              type="password"
+              autoFocus
+              value={bulkPassword}
+              onChange={(e) => setBulkPassword(e.target.value)}
+              placeholder="Password"
+              style={confirmStyles.passwordInput}
+            />
+            {bulkAuthError && <div style={confirmStyles.error}>{bulkAuthError}</div>}
+            <div style={confirmStyles.btnRow}>
+              <button
+                type="button"
+                style={confirmStyles.cancelBtn}
+                onClick={() => { setBulkPasswordCategory(null); setBulkPassword(""); setBulkAuthError(null); }}
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                style={confirmStyles.continueBtn}
+                disabled={!bulkPassword || bulkResolvingCategory !== null}
+              >
+                {bulkResolvingCategory ? "Resolving…" : "Confirm & Resolve"}
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
     </div>
   );
 }
+
+const confirmStyles: Record<string, React.CSSProperties> = {
+  overlay: { position: "fixed", inset: 0, background: "rgba(18,42,40,0.5)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 70 },
+  modal: { background: "#fff", borderRadius: 10, padding: 24, maxWidth: 420, width: "90%", boxShadow: "0 10px 30px rgba(0,0,0,0.2)" },
+  title: { fontFamily: "Space Grotesk, sans-serif", fontSize: 18, margin: "0 0 10px", color: C.ink },
+  body: { fontSize: 13.5, color: C.slate, lineHeight: 1.6, margin: "0 0 16px" },
+  passwordInput: { border: `1px solid ${C.line}`, borderRadius: 6, padding: "10px 12px", fontSize: 14, width: "100%", boxSizing: "border-box", outline: "none", marginBottom: 8 },
+  error: { fontSize: 12.5, color: C.rose, marginBottom: 8 },
+  btnRow: { display: "flex", gap: 10, marginTop: 8 },
+  cancelBtn: { flex: 1, border: `1px solid ${C.line}`, background: "#fff", borderRadius: 6, padding: "9px 0", cursor: "pointer", fontSize: 13 },
+  continueBtn: { flex: 1, border: "none", background: C.ink, color: "#fff", borderRadius: 6, padding: "9px 0", cursor: "pointer", fontSize: 13, fontWeight: 600 },
+};
 
 function TrendStat({ label, current, previous }: { label: string; current: number; previous: number }) {
   const delta = current - previous;
