@@ -42,6 +42,7 @@ export default async function TermPage({ params }: { params: { term: string } })
       initialConflicts={data.conflicts}
       termLabel={term.label}
       isLive={data.isLive}
+      isStatusLogTerm={term.source.kind === "live-statuslog"}
       apiTermSlug={params.term}
       previousTermLabel={previousTerm?.label}
       previousData={previousData && !previousData.error ? previousData.dashboard : null}

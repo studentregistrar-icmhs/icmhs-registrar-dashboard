@@ -2,7 +2,8 @@ import { fetchSheetRows, updateRange, appendRow, appendRows, batchUpdateRanges }
 import { findStudentRow } from "./rosterLookup";
 import { getTerm, TERMS } from "./terms";
 import { reconcile, STATUS_LABEL, LABEL_TO_FLAG, TERMINAL_STATUSES } from "./reconcile";
-import { readFlagsAt, LAYOUT_FOR_WRITE } from "./parse";
+import { readFlagsAt, LAYOUT_FOR_WRITE, parseCampusRows } from "./parse";
+import { inheritedTerminalFlags } from "./statusLog";
 
 export type WriteResult =
   | { ok: true }
@@ -215,4 +216,56 @@ function colLetter(index0: number): string {
     n = Math.floor((n - 1) / 26);
   }
   return s;
+}
+
+/**
+ * The dashboard already SHOWS inherited terminal statuses (see
+ * lib/statusLog.ts) without anything being written to the sheet — that's
+ * enough for the app itself, but leaves no trace for anyone auditing the
+ * raw sheet directly. This writes an explicit row to STATUS LOG for every
+ * student whose Graduated/Dropped status is currently only inferred, not
+ * logged — so the sheet itself becomes the source of truth too, not just
+ * the app's computation. Skips anyone who already has a matching row
+ * (safe to re-run — never creates a duplicate for someone already synced,
+ * even if a term's roster or flags haven't changed since the last sync).
+ */
+export async function syncInheritedTerminalStatuses(
+  syncedBy: string
+): Promise<{ ok: true; synced: string[] } | { ok: false; reason: "no-statuslog-term" }> {
+  const statusLogTerm = TERMS.find((t) => t.source.kind === "live-statuslog");
+  if (!statusLogTerm) return { ok: false, reason: "no-statuslog-term" };
+
+  const [mainRows, nakuruRows, logRows] = await Promise.all([
+    fetchSheetRows("MAIN CAMPUS!A:Z"),
+    fetchSheetRows("NAKURU CAMPUS!A:X"),
+    fetchSheetRows("STATUS LOG!A:D").catch(() => []),
+  ]);
+  const roster = [...parseCampusRows(mainRows, "MAIN"), ...parseCampusRows(nakuruRows, "NAKURU")];
+
+  const latestLoggedStatus = new Map<string, string>();
+  for (let i = 1; i < logRows.length; i++) {
+    const [admissionNo, term, status] = logRows[i] ?? [];
+    if (!admissionNo || String(term).trim() !== statusLogTerm.label) continue;
+    latestLoggedStatus.set(String(admissionNo), String(status ?? ""));
+  }
+
+  const today = new Date().toISOString().slice(0, 10);
+  const newRows: any[][] = [];
+  const synced: string[] = [];
+
+  for (const s of roster) {
+    const inherited = inheritedTerminalFlags(s.flagsMayAug, s.flagsJanApr);
+    if (!inherited) continue;
+    const r = reconcile(inherited);
+    const label = STATUS_LABEL[r.canonicalStatus as keyof typeof STATUS_LABEL];
+    if (latestLoggedStatus.get(s.admissionNo) === label) continue; // already logged correctly
+    newRows.push([s.admissionNo, statusLogTerm.label, label, today, `Auto-carried forward, synced by ${syncedBy}`]);
+    synced.push(s.admissionNo);
+  }
+
+  if (newRows.length > 0) {
+    await appendRows("STATUS LOG", newRows);
+  }
+
+  return { ok: true, synced };
 }

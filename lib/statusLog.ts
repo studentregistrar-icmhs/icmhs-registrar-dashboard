@@ -35,7 +35,7 @@ function flagsFromLabel(label: string): RawFlags {
  * Returns null if neither legacy term has a terminal status, so the
  * caller falls back to whatever the log says.
  */
-function inheritedTerminalFlags(mayAug: RawFlags, janApr: RawFlags): RawFlags | null {
+export function inheritedTerminalFlags(mayAug: RawFlags, janApr: RawFlags): RawFlags | null {
   for (const flags of [mayAug, janApr]) {
     const r = reconcile(flags);
     if (r.canonicalStatus !== "UNMARKED" && TERMINAL_STATUSES.includes(r.canonicalStatus)) {

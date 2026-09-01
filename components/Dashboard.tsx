@@ -49,6 +49,7 @@ type Props = {
   initialConflicts: ConflictRow[];
   termLabel: string;
   isLive: boolean;
+  isStatusLogTerm?: boolean;
   apiTermSlug: string;
   previousTermLabel?: string;
   previousData?: DashboardData | null;
@@ -57,7 +58,7 @@ type Props = {
 const AUTO_REFRESH_MS = 3 * 60 * 1000;
 
 export default function Dashboard({
-  initialData, initialConflicts, termLabel, isLive, apiTermSlug, previousTermLabel, previousData,
+  initialData, initialConflicts, termLabel, isLive, isStatusLogTerm, apiTermSlug, previousTermLabel, previousData,
 }: Props) {
   const [data, setData] = useState(initialData);
   const [conflicts, setConflicts] = useState(initialConflicts);
@@ -78,8 +79,9 @@ export default function Dashboard({
   const [now, setNow] = useState(() => Date.now());
   const [resolvingId, setResolvingId] = useState<string | null>(null);
   const [bulkResolvingCategory, setBulkResolvingCategory] = useState<string | null>(null);
+  const [syncingTerminal, setSyncingTerminal] = useState(false);
   const [pendingResolve, setPendingResolve] = useState<
-    { type: "single"; admissionNo: string } | { type: "bulk"; category: string } | null
+    { type: "single"; admissionNo: string } | { type: "bulk"; category: string } | { type: "sync-terminal" } | null
   >(null);
   const [resolverName, setResolverName] = useState("");
   const [resolverPassword, setResolverPassword] = useState("");
@@ -345,6 +347,33 @@ export default function Dashboard({
     }
   }
 
+  async function handleSyncTerminal(password: string, syncedBy: string) {
+    setSyncingTerminal(true);
+    try {
+      const res = await fetch("/api/status-log/sync-terminal", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ password, syncedBy }),
+      });
+      const json = await res.json();
+      if (res.status === 401) {
+        alert("Wrong password — nothing was changed.");
+      } else if (json.ok) {
+        window.localStorage.setItem("icmhs-resolver-name", syncedBy);
+        if (json.synced.length === 0) {
+          alert("Nothing to sync — every inherited Graduated/Dropped status is already logged.");
+        } else {
+          alert(`Logged ${json.synced.length} student(s) to STATUS LOG.`);
+          await handleRefresh();
+        }
+      } else {
+        alert(`Couldn't sync: ${json.reason ?? "unknown error"}`);
+      }
+    } finally {
+      setSyncingTerminal(false);
+    }
+  }
+
   async function confirmPendingResolve() {
     if (!pendingResolve || !resolverPassword.trim() || !resolverName.trim()) return;
     const name = resolverName.trim();
@@ -353,8 +382,10 @@ export default function Dashboard({
     setResolverPassword("");
     if (pendingResolve.type === "single") {
       await handleResolve(pendingResolve.admissionNo, password, name);
-    } else {
+    } else if (pendingResolve.type === "bulk") {
       await handleBulkResolve(pendingResolve.category, password, name);
+    } else {
+      await handleSyncTerminal(password, name);
     }
   }
 
@@ -449,6 +480,15 @@ export default function Dashboard({
           {filtersActive && (
             <button onClick={() => { setGenderFilter("all"); setCourseFilter("all"); setDepartmentFilter("all"); setIntakeFilter("all"); }} style={styles.clearFilterBtn}>
               Clear filters
+            </button>
+          )}
+          {isStatusLogTerm && (
+            <button
+              disabled={syncingTerminal}
+              onClick={() => setPendingResolve({ type: "sync-terminal" })}
+              style={styles.syncBtn}
+            >
+              {syncingTerminal ? "Syncing…" : "Sync terminal statuses to log"}
             </button>
           )}
           {isLive && (
@@ -877,11 +917,13 @@ export default function Dashboard({
       {pendingResolve && (
         <div style={modalStyles.overlay} onClick={() => { setPendingResolve(null); setResolverPassword(""); }}>
           <div style={modalStyles.box} onClick={(e) => e.stopPropagation()}>
-            <h3 style={modalStyles.title}>Confirm resolve</h3>
+            <h3 style={modalStyles.title}>{pendingResolve.type === "sync-terminal" ? "Confirm sync" : "Confirm resolve"}</h3>
             <p style={modalStyles.body}>
               {pendingResolve.type === "single"
                 ? `This will overwrite the conflicting status flags for ${pendingResolve.admissionNo} in the live sheet.`
-                : `This will overwrite the conflicting status flags for every student resolving to "${pendingResolve.category}" in the live sheet.`}
+                : pendingResolve.type === "bulk"
+                ? `This will overwrite the conflicting status flags for every student resolving to "${pendingResolve.category}" in the live sheet.`
+                : `This will append a STATUS LOG row for every student whose Graduated/Dropped status is currently inherited but not yet logged.`}
               {" "}Enter your name and the resolve password to continue.
             </p>
             <label style={modalStyles.label}>Your name</label>
@@ -1137,6 +1179,7 @@ const styles: Record<string, React.CSSProperties> = {
   toggleGroup: { display: "flex", background: "#fff", border: `1px solid ${C.line}`, borderRadius: 8, padding: 3, gap: 2 },
   filterSelect: { border: `1px solid ${C.line}`, background: "#fff", color: C.ink, borderRadius: 8, padding: "8px 10px", fontSize: 12.5, fontFamily: "Inter, sans-serif", cursor: "pointer", maxWidth: 170 },
   clearFilterBtn: { border: `1px solid ${C.rose}`, background: "#fff", color: C.rose, borderRadius: 8, padding: "8px 12px", fontSize: 12.5, fontWeight: 600, cursor: "pointer", whiteSpace: "nowrap" },
+  syncBtn: { border: `1px solid ${C.teal}`, background: "#fff", color: C.teal, borderRadius: 8, padding: "8px 12px", fontSize: 12.5, fontWeight: 600, cursor: "pointer", whiteSpace: "nowrap" },
   toggleBtn: { border: "none", background: "transparent", padding: "8px 14px", fontSize: 13, fontWeight: 500, color: C.slate, borderRadius: 6, cursor: "pointer" },
   toggleBtnActive: { background: C.ink, color: "#fff" },
   refreshBtn: { border: `1px solid ${C.ink}`, background: C.ink, color: "#fff", padding: "9px 16px", borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: "pointer" },

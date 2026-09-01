@@ -146,6 +146,29 @@ dashboard password:
 3. Set `RESOLVE_PASSWORD` in Vercel's Environment Variables if you haven't
    already (see `.env.example`). Resolving fails closed until it's set.
 
+## Syncing inherited terminal statuses into the Status Log
+
+Graduated/Dropped carries forward automatically from Jan–Apr/May–Aug into
+any Status Log term — the dashboard, KPIs, and student profile page all
+show it without anyone logging anything (see `inheritedTerminalFlags()` in
+`lib/statusLog.ts`). That's enough for the app itself, but the raw
+`STATUS LOG` sheet stays silent about it, which isn't great if someone
+audits the sheet directly rather than the dashboard.
+
+The **"Sync terminal statuses to log"** button (visible on any Status Log
+term's dashboard, next to the filters) writes an explicit row —
+`Admission No. | Term | Status | Date Updated | Auto-carried forward,
+synced by <name>` — for every student whose terminal status is currently
+only inferred, not logged. It's gated by the same `RESOLVE_PASSWORD` and
+name prompt as resolving, and safe to click repeatedly: it only appends a
+row for a student if their latest logged row for that term doesn't already
+match, so re-running it after everyone's already synced does nothing.
+
+Note the 5th column: `flagsFromLabel()` only reads the first 3 columns
+positionally, so this extra "why" note doesn't interfere with normal
+parsing — it's there purely so a human skimming the sheet can tell an
+auto-synced row apart from one a staff member typed by hand.
+
 ## Setting up Sept–Dec 2026 (the Status Log)
 
 1. Add a tab named exactly `STATUS LOG` with header row:
