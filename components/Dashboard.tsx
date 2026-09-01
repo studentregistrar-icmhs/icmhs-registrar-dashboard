@@ -31,6 +31,14 @@ const STATUS_ORDER = [
   { label: "Unmarked", color: "#C9CFC5" },
 ];
 
+// The 8 canonical statuses a student can be set to — same set the student
+// profile page's own status editor offers ("Unmarked" isn't a settable
+// status, it's the absence of one).
+const MARK_STATUS_OPTIONS = [
+  "Graduated", "In Session", "Attachment", "Clinicals",
+  "Deferred", "Dropped", "Completed", "Not Yet Reported",
+];
+
 const fmt = (n: number) => n.toLocaleString("en-US");
 
 function relativeTime(iso: string, now: number): string {
@@ -80,8 +88,14 @@ export default function Dashboard({
   const [resolvingId, setResolvingId] = useState<string | null>(null);
   const [bulkResolvingCategory, setBulkResolvingCategory] = useState<string | null>(null);
   const [syncingTerminal, setSyncingTerminal] = useState(false);
+  const [markingId, setMarkingId] = useState<string | null>(null);
+  const [markSelections, setMarkSelections] = useState<Record<string, string>>({});
   const [pendingResolve, setPendingResolve] = useState<
-    { type: "single"; admissionNo: string } | { type: "bulk"; category: string } | { type: "sync-terminal" } | null
+    | { type: "single"; admissionNo: string }
+    | { type: "bulk"; category: string }
+    | { type: "mark"; admissionNo: string; status: string }
+    | { type: "sync-terminal" }
+    | null
   >(null);
   const [resolverName, setResolverName] = useState("");
   const [resolverPassword, setResolverPassword] = useState("");
@@ -347,6 +361,37 @@ export default function Dashboard({
     }
   }
 
+  async function handleMarkUnmarked(admissionNo: string, status: string, password: string, markedBy: string) {
+    setMarkingId(admissionNo);
+    try {
+      const res = await fetch("/api/unmarked/mark", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ admissionNo, termSlug: apiTermSlug, status, password, markedBy }),
+      });
+      const json = await res.json();
+      if (json.ok) {
+        window.localStorage.setItem("icmhs-resolver-name", markedBy);
+        setMarkSelections((prev) => {
+          const next = { ...prev };
+          delete next[admissionNo];
+          return next;
+        });
+        await handleRefresh();
+      } else if (res.status === 401) {
+        alert("Wrong password — nothing was changed.");
+      } else if (json.reason === "terminal-lock") {
+        alert(
+          `Can't set that status — ${admissionNo} was already marked ${json.blockingStatus} in ${json.blockingTerm}, which is treated as final.`
+        );
+      } else {
+        alert(`Couldn't update status: ${json.reason ?? "unknown error"}`);
+      }
+    } finally {
+      setMarkingId(null);
+    }
+  }
+
   async function handleSyncTerminal(password: string, syncedBy: string) {
     setSyncingTerminal(true);
     try {
@@ -384,6 +429,8 @@ export default function Dashboard({
       await handleResolve(pendingResolve.admissionNo, password, name);
     } else if (pendingResolve.type === "bulk") {
       await handleBulkResolve(pendingResolve.category, password, name);
+    } else if (pendingResolve.type === "mark") {
+      await handleMarkUnmarked(pendingResolve.admissionNo, pendingResolve.status, password, name);
     } else {
       await handleSyncTerminal(password, name);
     }
@@ -868,6 +915,7 @@ export default function Dashboard({
                     <th style={{ ...styles.th, textAlign: "left" }}>Name</th>
                     <th style={styles.th}>Campus</th>
                     <th style={{ ...styles.th, textAlign: "left" }}>Course</th>
+                    <th style={styles.th}></th>
                   </tr>
                 </thead>
                 <tbody>
@@ -881,6 +929,40 @@ export default function Dashboard({
                       <td style={styles.tdName}>{s.name}</td>
                       <td style={styles.tdNum}>{s.campus}</td>
                       <td style={styles.tdName}>{s.courseName || s.courseCode}</td>
+                      <td style={styles.tdNum}>
+                        <div style={{ display: "flex", gap: 6, alignItems: "center", justifyContent: "flex-end" }}>
+                          <select
+                            style={styles.markSelect}
+                            value={markSelections[s.admissionNo] ?? ""}
+                            disabled={markingId === s.admissionNo}
+                            onChange={(e) =>
+                              setMarkSelections((prev) => ({ ...prev, [s.admissionNo]: e.target.value }))
+                            }
+                          >
+                            <option value="" disabled>
+                              Set status…
+                            </option>
+                            {MARK_STATUS_OPTIONS.map((opt) => (
+                              <option key={opt} value={opt}>
+                                {opt}
+                              </option>
+                            ))}
+                          </select>
+                          <button
+                            style={styles.resolveBtn}
+                            disabled={!markSelections[s.admissionNo] || markingId === s.admissionNo}
+                            onClick={() =>
+                              setPendingResolve({
+                                type: "mark",
+                                admissionNo: s.admissionNo,
+                                status: markSelections[s.admissionNo],
+                              })
+                            }
+                          >
+                            {markingId === s.admissionNo ? "Setting…" : "Set"}
+                          </button>
+                        </div>
+                      </td>
                     </tr>
                   ))}
                 </tbody>
@@ -889,7 +971,9 @@ export default function Dashboard({
           )}
           <div style={styles.ledgerFoot}>
             Likely cause: the student's row exists but none of the 8 status columns were filled in
-            for this term yet. Mark the correct status at the source and it'll clear on next refresh.
+            for this term yet. Pick a status from the dropdown and hit "Set" to write it directly to
+            the live sheet — same password-protected confirmation as "Resolve" above — or mark the
+            correct status at the source and it'll clear on next refresh either way.
           </div>
         </section>
         </>
@@ -917,12 +1001,20 @@ export default function Dashboard({
       {pendingResolve && (
         <div style={modalStyles.overlay} onClick={() => { setPendingResolve(null); setResolverPassword(""); }}>
           <div style={modalStyles.box} onClick={(e) => e.stopPropagation()}>
-            <h3 style={modalStyles.title}>{pendingResolve.type === "sync-terminal" ? "Confirm sync" : "Confirm resolve"}</h3>
+            <h3 style={modalStyles.title}>
+              {pendingResolve.type === "sync-terminal"
+                ? "Confirm sync"
+                : pendingResolve.type === "mark"
+                ? "Confirm status update"
+                : "Confirm resolve"}
+            </h3>
             <p style={modalStyles.body}>
               {pendingResolve.type === "single"
                 ? `This will overwrite the conflicting status flags for ${pendingResolve.admissionNo} in the live sheet.`
                 : pendingResolve.type === "bulk"
                 ? `This will overwrite the conflicting status flags for every student resolving to "${pendingResolve.category}" in the live sheet.`
+                : pendingResolve.type === "mark"
+                ? `This will set ${pendingResolve.admissionNo}'s status to "${pendingResolve.status}" for ${termLabel} in the live sheet.`
                 : `This will append a STATUS LOG row for every student whose Graduated/Dropped status is currently inherited but not yet logged.`}
               {" "}Enter your name and the resolve password to continue.
             </p>
@@ -955,7 +1047,7 @@ export default function Dashboard({
                 disabled={!resolverName.trim() || !resolverPassword.trim()}
                 onClick={confirmPendingResolve}
               >
-                Confirm resolve
+                {pendingResolve.type === "mark" ? "Confirm update" : "Confirm resolve"}
               </button>
             </div>
           </div>
@@ -1223,6 +1315,7 @@ const styles: Record<string, React.CSSProperties> = {
   tdNum: { fontFamily: "IBM Plex Mono, monospace", fontSize: 12.5, padding: "7px 10px", textAlign: "right", color: C.slate, whiteSpace: "nowrap" },
   footer: { fontSize: 11.5, color: C.slate, textAlign: "center", marginTop: 8, fontFamily: "IBM Plex Mono, monospace" },
   resolveBtn: { border: `1px solid ${C.teal}`, background: "#fff", color: C.teal, borderRadius: 6, padding: "4px 10px", fontSize: 11.5, fontWeight: 600, cursor: "pointer", whiteSpace: "nowrap" },
+  markSelect: { border: `1px solid ${C.line}`, background: "#fff", color: C.ink, borderRadius: 6, padding: "4px 6px", fontSize: 11.5, fontFamily: "Inter, sans-serif", cursor: "pointer" },
   bulkRow: { display: "flex", alignItems: "center", flexWrap: "wrap", gap: 8, margin: "4px 0 14px" },
   bulkRowLabel: { fontSize: 11.5, color: C.slate, fontWeight: 600, marginRight: 2 },
   bulkResolveBtn: { border: `1px solid ${C.line}`, background: C.bg, color: C.ink, borderRadius: 6, padding: "5px 11px", fontSize: 11.5, fontWeight: 600, cursor: "pointer", whiteSpace: "nowrap" },

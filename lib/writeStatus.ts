@@ -207,6 +207,54 @@ export async function resolveLegacyConflictsBulk(
   return results;
 }
 
+/**
+ * Sets a status for a student who is currently Unmarked in this term (no
+ * status flag/log entry at all yet), from the "Unmarked Students" list.
+ * Unlike resolveLegacyConflict (which only ever picks among flags the sheet
+ * already has set), this writes a status the registrar chooses from
+ * scratch — so it re-verifies the student is still genuinely Unmarked right
+ * before writing, to avoid clobbering a status someone else just set.
+ * Logs to the same RESOLVE LOG sheet as conflict resolution, with "Unmarked"
+ * as the previous value, so both kinds of write share one audit trail.
+ */
+export async function markUnmarkedStudent(
+  admissionNo: string,
+  termSlug: string,
+  newStatusLabel: string,
+  markedBy: string
+): Promise<WriteResult> {
+  const term = getTerm(termSlug);
+  if (!term) return { ok: false, reason: "unsupported-term" };
+  if (!LABEL_TO_FLAG[newStatusLabel]) return { ok: false, reason: "invalid-status" };
+
+  // Only legacy wide-column terms have flag columns to re-check against;
+  // Status Log terms treat "no row yet" as Unmarked and can be written directly.
+  if (term.source.kind === "live-legacy") {
+    const loc = await findStudentRow(admissionNo);
+    if (!loc) return { ok: false, reason: "not-found" };
+    const flags = readFlagsAt(loc.rawRow, loc.campus, term.source.block);
+    const r = reconcile(flags);
+    if (r.canonicalStatus !== "UNMARKED") return { ok: false, reason: "invalid-status" };
+  }
+
+  // No override: a student who is genuinely terminal-locked elsewhere should
+  // still be blocked here, same as the profile page's first attempt.
+  const writeResult = await updateStudentStatus({ admissionNo, termSlug, newStatusLabel });
+
+  if (writeResult.ok) {
+    await appendRow("RESOLVE LOG", [
+      new Date().toISOString(),
+      admissionNo,
+      term.label,
+      "Unmarked",
+      newStatusLabel,
+      markedBy,
+    ]);
+  }
+
+  return writeResult;
+}
+
 function colLetter(index0: number): string {
   let n = index0 + 1;
   let s = "";
