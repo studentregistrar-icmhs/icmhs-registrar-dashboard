@@ -51,3 +51,4 @@ const styles: Record<string, React.CSSProperties> = {
   studentSearchLink: { display: "inline-block", marginBottom: 24, fontSize: 13.5, color: "#0F7268", textDecoration: "none", fontWeight: 600 },
   cardNotReady: { fontSize: 11.5, color: "#98A39C", fontStyle: "italic", marginTop: 14 },
 };
+g

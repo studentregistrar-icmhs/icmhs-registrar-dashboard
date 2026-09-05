@@ -1,0 +1,9 @@
+{
+  "redirects": [
+    {
+      "source": "/(.*)",
+      "destination": "https://icmhs-registrar-suite.vercel.app/$1",
+      "permanent": false
+    }
+  ]
+}
